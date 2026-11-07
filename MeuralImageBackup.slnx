@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MeuralImageBackup.Core/MeuralImageBackup.Core.csproj" />
+    <Project Path="src/MeuralImageBackup.Web/MeuralImageBackup.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MeuralImageBackup.Tests/MeuralImageBackup.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,300 @@
+@page "/images"
+@page "/Image"
+@inherits AppPage
+@inject IJSRuntime JS
+
+<PageTitle>Images · @AppInfo.Name</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1>Images</h1>
+        @if (_library is { } lib)
+        {
+            <p class="page-sub">
+                <span>@Format.Count(lib.Images.Count, "image", "images") in @Format.Count(lib.Galleries.Count, "gallery", "galleries")</span>
+                <span>@Format.Size(lib.DiskSize)</span>
+            </p>
+        }
+    </div>
+    @if (_missing > 0)
+    {
+        <div class="page-actions">
+            <button type="button" class="btn btn-secondary" disabled="@Busy" @onclick="RemoveMissingAsync">
+                <Icon Name="broom" Size="16" />@($"Remove {Format.Count(_missing, "entry", "entries")} without a file")
+            </button>
+        </div>
+    }
+</div>
+
+@if (_library is null)
+{
+    <div class="page-loading"><BrandMark Size="40" Busy="true" /></div>
+}
+else if (_library.Images.Count == 0)
+{
+    <div class="empty">
+        <Icon Name="image" Size="28" />
+        <h2>No images yet</h2>
+        <p>Images appear here as soon as Home Assistant reports what the frames show.</p>
+    </div>
+}
+else
+{
+    <div class="filters">
+        <label class="filter-search">
+            <Icon Name="search" />
+            <input data-bwignore="true" type="search" placeholder="Find an image or gallery" aria-label="Find an image or gallery"
+                   value="@Q" @oninput="e => Set(q: e.Value?.ToString())" />
+        </label>
+        @if (_library.Frames.Count > 1)
+        {
+            <label class="filter-select">
+                <span>Frame</span>
+                <select class="select" value="@(Frame ?? "")" @onchange="e => Set(frame: e.Value?.ToString())">
+                    <option value="">All frames</option>
+                    @foreach (var f in _library.Frames)
+                    {
+                        <option value="@f">@f</option>
+                    }
+                </select>
+            </label>
+        }
+        <label class="filter-select">
+            <span>Not shown for</span>
+            <select class="select" value="@(Age?.ToString() ?? "")" @onchange="e => Set(age: int.TryParse(e.Value?.ToString(), out var d) ? d : 0)">
+                @foreach (var (days, label) in Filters.Ages)
+                {
+                    <option value="@(days?.ToString() ?? "")">@label</option>
+                }
+            </select>
+        </label>
+        <label class="filter-select">
+            <span>Sort</span>
+            <select class="select" value="@(Sort ?? "recent")" @onchange="e => Set(sort: e.Value?.ToString())">
+                @foreach (var (key, label) in Filters.ImageSorts)
+                {
+                    <option value="@key">@label</option>
+                }
+            </select>
+        </label>
+        <label class="check filter-check">
+            <input type="checkbox" checked="@Missing" @onchange="e => Set(missing: e.Value is true)" />
+            <span>Only missing files</span>
+        </label>
+        <div class="segmented filter-view" role="group" aria-label="View">
+            <button type="button" class="@(_view == "grid" ? "on" : "")" aria-pressed="@(_view == "grid" ? "true" : "false")" title="Grid" aria-label="Grid" @onclick='() => SetViewAsync("grid")'><Icon Name="grid" Size="16" /></button>
+            <button type="button" class="@(_view == "table" ? "on" : "")" aria-pressed="@(_view == "table" ? "true" : "false")" title="Table" aria-label="Table" @onclick='() => SetViewAsync("table")'><Icon Name="list" Size="16" /></button>
+        </div>
+    </div>
+
+    <p class="result-count muted small">
+        @(_shown.Count == _library.Images.Count ? Format.Count(_shown.Count, "image", "images") : $"{Format.Number(_shown.Count)} of {Format.Count(_library.Images.Count, "image", "images")}")
+    </p>
+
+    @if (_shown.Count == 0)
+    {
+        <div class="empty">
+            <Icon Name="search" Size="28" />
+            <p>No image matches these filters.</p>
+            <button type="button" class="btn btn-secondary" @onclick="ClearFilters">Show all images</button>
+        </div>
+    }
+    else if (_view == "table")
+    {
+        <div class="table-scroll">
+            <table class="table image-table">
+                <thead>
+                    <tr>
+                        <th class="image-table-photo"><span class="visually-hidden">Image</span></th>
+                        <th>@SortHeader("name", "Name")</th>
+                        <th>@SortHeader("gallery", "Gallery")</th>
+                        @if (_library.Frames.Count > 1)
+                        {
+                            <th>Frame</th>
+                        }
+                        <th class="num">@SortHeader("shown", "Shown")</th>
+                        <th>@SortHeader("recent", "Last shown")</th>
+                        <th class="num hide-tablet">@SortHeader("size", "Size")</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var i = 0; i < Math.Min(_limit, _shown.Count); i++)
+                    {
+                        var index = i;
+                        var image = _shown[i];
+                        <tr @key="image.Id" class="clickable @(image.Exists ? "" : "missing")" @onclick="() => _viewing = index">
+                            <td class="image-table-photo">
+                                @if (image.Exists)
+                                {
+                                    <img src="@ImageTile.ThumbUrl(image)" alt="" loading="lazy" decoding="async" />
+                                }
+                                else
+                                {
+                                    <span class="image-table-nophoto" title="File missing"><Icon Name="file-missing" Size="18" /></span>
+                                }
+                            </td>
+                            <td class="image-table-name" data-label="Name">
+                                <button type="button" class="link-button">@image.Name</button>
+                                @if (!image.Exists)
+                                {
+                                    <span class="tag tag-warn">File missing</span>
+                                }
+                            </td>
+                            <td data-label="Gallery"><a href="@($"g/{image.GalleryId}")" @onclick:stopPropagation="true">@image.GalleryName</a></td>
+                            @if (_library.Frames.Count > 1)
+                            {
+                                <td data-label="Frame">@image.FrameName</td>
+                            }
+                            <td class="num" data-label="Shown">@Format.Number(image.AccessCount)</td>
+                            <td data-label="Last shown" title="@Format.DateTime(image.LastAccessedAt, Zone)">@Format.Date(image.LastAccessedAt, Zone)</td>
+                            <td class="num muted hide-tablet" data-label="Size">@(image.Exists ? Format.Size(image.Size) : "")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        <div class="tile-grid">
+            @for (var i = 0; i < Math.Min(_limit, _shown.Count); i++)
+            {
+                var index = i;
+                <ImageTile @key="_shown[i].Id" Image="_shown[i]" ShowGallery="true" OnOpen="() => _viewing = index" />
+            }
+        </div>
+    }
+
+    @if (_shown.Count > _limit)
+    {
+        <div class="more">
+            <button type="button" class="btn btn-secondary" @onclick="() => _limit += Page">
+                @($"Show {Format.Number(Math.Min(Page, _shown.Count - _limit))} more")
+            </button>
+            <span class="muted small">@($"{Format.Number(_limit)} of {Format.Number(_shown.Count)} shown")</span>
+        </div>
+    }
+
+    <ImageViewer Images="_shown" @bind-Index="_viewing" OnDelete="DeleteImageAsync" />
+}
+
+@code {
+    private const int Page = 120;
+
+    [SupplyParameterFromQuery] public string? Q { get; set; }
+    [SupplyParameterFromQuery] public string? Frame { get; set; }
+    [SupplyParameterFromQuery] public int? Age { get; set; }
+    [SupplyParameterFromQuery] public string? Sort { get; set; }
+    [SupplyParameterFromQuery] public bool Missing { get; set; }
+
+    private Library? _library;
+    private List<ImageView> _shown = [];
+    private int _missing;
+    private int _limit = Page;
+    private int _viewing = -1;
+    private string _view = "grid";
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    protected override void OnParametersSet()
+    {
+        _limit = Page;
+        Apply();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            if (await JS.InvokeAsync<string?>("meural.getPref", "imagesView") == "table")
+            {
+                _view = "table";
+                StateHasChanged();
+            }
+        }
+        catch (JSException)
+        {
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _library = await LibraryService.LoadAsync(PageToken);
+        _missing = _library.Images.Count(i => !i.Exists);
+        Apply();
+    }
+
+    private void Apply()
+    {
+        if (_library is null) return;
+        var matching = _library.Images.Where(i =>
+            Filters.Matches(Q, i.Name, i.GalleryName) &&
+            (Frame is null || i.FrameName == Frame) &&
+            Filters.OlderThan(i.LastAccessedAt, Age) &&
+            (!Missing || !i.Exists));
+        _shown = Filters.Sort(matching, Sort).ToList();
+        if (_viewing >= _shown.Count)
+            _viewing = -1;
+    }
+
+    // Changes some filters, keeping the others; "" or 0 clears one.
+    private void Set(string? q = null, string? frame = null, int? age = null, string? sort = null, bool? missing = null)
+    {
+        ReplaceQuery(new Dictionary<string, object?>
+        {
+            ["q"] = q is null ? Q : q.Length == 0 ? null : q,
+            ["frame"] = frame is null ? Frame : frame.Length == 0 ? null : frame,
+            ["age"] = age is null ? Age : age == 0 ? null : age,
+            ["sort"] = sort is null ? Sort : sort == "recent" ? null : sort,
+            ["missing"] = (missing ?? Missing) ? true : null,
+        });
+    }
+
+    private void ClearFilters() =>
+        ReplaceQuery(new Dictionary<string, object?> { ["q"] = null, ["frame"] = null, ["age"] = null, ["missing"] = null, ["sort"] = Sort });
+
+    private RenderFragment SortHeader(string key, string label) => __builder =>
+    {
+        var on = (Sort ?? "recent") == key;
+        <button type="button" class="sort-button" @onclick="() => Set(sort: key)" aria-pressed="@(on ? "true" : "false")">
+            @label@if (on) {<span class="sort-mark"> ▾</span>}
+        </button>
+    };
+
+    private async Task SetViewAsync(string view)
+    {
+        _view = view;
+        try { await JS.InvokeVoidAsync("meural.setPref", "imagesView", view); } catch (JSException) { }
+    }
+
+    private async Task RemoveMissingAsync()
+    {
+        var ok = await Ui.Confirm.AskAsync($"Remove {Format.Count(_missing, "entry", "entries")}?",
+            $"The files of {Format.Count(_missing, "image aren't", "images aren't")} there any more. This removes their entries; if a frame shows one of them again, it's downloaded again.",
+            "Remove", danger: true);
+        if (!ok) return;
+        var removed = 0;
+        if (await RunAsync(async () => removed = await LibraryService.RemoveMissingAsync(PageToken)))
+        {
+            Ui.Toast.Success($"Removed {Format.Count(removed, "entry", "entries")}.");
+            await LoadAsync();
+        }
+    }
+
+    private async Task DeleteImageAsync(ImageView image)
+    {
+        var ok = await Ui.Confirm.AskAsync(image.Exists ? $"Delete {image.Name}?" : $"Remove {image.Name}?",
+            image.Exists
+                ? "This deletes the image's file and its entry. If a frame shows it again, it's downloaded again."
+                : "Its file isn't there; this removes the entry. If a frame shows it again, it's downloaded again.",
+            image.Exists ? "Delete" : "Remove", danger: true);
+        if (!ok) return;
+        var at = _viewing;
+        if (await RunAsync(() => LibraryService.DeleteImageAsync(image.Id, PageToken)))
+        {
+            await LoadAsync();
+            _viewing = _shown.Count == 0 ? -1 : Math.Min(at, _shown.Count - 1);
+        }
+    }
+}

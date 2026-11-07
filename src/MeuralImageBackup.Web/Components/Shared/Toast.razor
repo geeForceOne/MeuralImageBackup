@@ -1,0 +1,58 @@
+@implements IDisposable
+
+<div class="toast-stack" aria-live="polite">
+    @foreach (var t in _toasts)
+    {
+        <div class="toast toast-@t.Kind" @key="t">
+            <Icon Name="@(t.Kind == "error" ? "alert" : t.Kind == "success" ? "check" : "info")" Size="16" />
+            <span>@t.Message</span>
+            <button type="button" class="toast-close" aria-label="Close" @onclick="() => Remove(t)">×</button>
+        </div>
+    }
+</div>
+
+@code {
+    // A class, not a record: each toast is its own @key, so the same message can show twice at
+    // once (two equal records would be duplicate keys, which ends the circuit).
+    private sealed class Item(string message, string kind)
+    {
+        public string Message => message;
+        public string Kind => kind;
+    }
+
+    private readonly List<Item> _toasts = [];
+    private readonly CancellationTokenSource _cts = new();
+
+    public void Success(string message) => Show(message, "success");
+    public void Error(string message) => Show(message, "error");
+    public void Info(string message) => Show(message, "info");
+
+    private void Show(string message, string kind)
+    {
+        var item = new Item(message, kind);
+        _toasts.Add(item);
+        if (_toasts.Count > 3)
+            _toasts.RemoveAt(0);
+        _ = InvokeAsync(StateHasChanged);
+        _ = AutoHideAsync(item, kind == "error" ? 9 : 5);
+    }
+
+    private async Task AutoHideAsync(Item item, int seconds)
+    {
+        try { await Task.Delay(TimeSpan.FromSeconds(seconds), _cts.Token); }
+        catch (OperationCanceledException) { return; }
+        await InvokeAsync(() => Remove(item));
+    }
+
+    private void Remove(Item item)
+    {
+        if (_toasts.Remove(item))
+            StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

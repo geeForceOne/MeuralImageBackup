@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\MeuralImageBackup.Core\MeuralImageBackup.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Markdig" Version="1.6.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.14">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <!-- Real cultures are needed for the region formats (de-CH dates, en-US numbers...). -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- The version shown in the app (AppInfo.Version) and by /api/version. Local builds say "dev";
+         the Docker build passes the release version (-p:InformationalVersion=2.0.0) from the git
+         tag. The SDK would otherwise append "+<commit hash>". -->
+    <InformationalVersion>dev</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The release notes page shows the repository's CHANGELOG.md, built into the app. -->
+    <EmbeddedResource Include="..\..\CHANGELOG.md" LogicalName="CHANGELOG.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The day this build was made (AppInfo.BuildDate). -->
+    <AssemblyMetadata Include="BuildDate" Value="$([System.DateTime]::UtcNow.ToString('yyyy-MM-dd'))" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="MeuralImageBackup.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,40 @@
+@* A gallery in the overview: its latest images as a cover, name, frame and how it's been shown. *@
+@{ var cover = Gallery.Images.Where(i => i.Exists).Take(4).ToList(); }
+<a class="gallery-card" href="@($"g/{Gallery.Id}")">
+    <span class="gallery-cover cover-@Math.Max(cover.Count, 1)">
+        @if (cover.Count == 0)
+        {
+            <span class="tile-placeholder"><Icon Name="image" Size="28" /><span>@(Gallery.Images.Count == 0 ? "No images yet" : "Files missing")</span></span>
+        }
+        @foreach (var image in cover)
+        {
+            <img @key="image.Id" src="@ImageTile.ThumbUrl(image)" alt="" loading="lazy" decoding="async" />
+        }
+    </span>
+    <span class="gallery-body">
+        <span class="gallery-name">@Gallery.Name</span>
+        @if (ShowFrame)
+        {
+            <span class="gallery-frame"><Icon Name="frame" Size="14" />@Gallery.FrameName</span>
+        }
+        <span class="gallery-meta">
+            <span>@Format.Count(Gallery.Images.Count, "image", "images")</span>
+            <span>@Format.Count(Gallery.AccessCount, "time shown", "times shown")</span>
+        </span>
+        <span class="gallery-when" title="@Format.DateTime(Gallery.LastAccessedAt, Zone)">
+            <Icon Name="clock" Size="14" />Last shown @Format.Ago(Gallery.LastAccessedAt, Zone)
+        </span>
+        @if (Gallery.Missing > 0)
+        {
+            <span class="gallery-missing"><Icon Name="file-missing" Size="14" />@Format.Count(Gallery.Missing, "file missing", "files missing")</span>
+        }
+    </span>
+</a>
+
+@code {
+    [Parameter, EditorRequired] public GalleryView Gallery { get; set; } = default!;
+    [Parameter] public bool ShowFrame { get; set; } = true;
+    [CascadingParameter] private AppUi Ui { get; set; } = default!;
+
+    private TimeZoneInfo Zone => Ui.Zone;
+}

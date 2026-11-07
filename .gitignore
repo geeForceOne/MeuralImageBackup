@@ -1,0 +1,42 @@
+# Build output
+bin/
+obj/
+publish/
+*.user
+*.suo
+.vs/
+.vscode/
+.idea/
+TestResults/
+
+# Local runtime data: the SQLite database, Data Protection keys and the downloaded images. All of
+# these live under ./data when running locally (see appsettings.Development.json) and in Docker
+# volumes in production; they must never be committed.
+# Anchored paths: git on Windows ignores case, so a bare "data/" would also hide src/*/Data.
+/data/
+/src/MeuralImageBackup.Web/data/
+/src/MeuralImageBackup.Web/database/
+/src/MeuralImageBackup.Web/uploads/
+**/keys/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Secrets and machine-local configuration
+.env
+.env.*
+!.env.example
+appsettings.*.local.json
+secrets.json
+*.pfx
+*.pem
+*.key
+
+# Claude Code machine-local settings (the shared settings.json stays tracked)
+.claude/settings.local.json
+
+# OS noise
+Thumbs.db
+.DS_Store

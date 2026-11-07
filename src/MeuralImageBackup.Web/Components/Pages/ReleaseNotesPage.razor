@@ -1,0 +1,15 @@
+@page "/release-notes"
+@page "/ReleaseNotes"
+
+<PageTitle>Release notes · @AppInfo.Name</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1>Release notes</h1>
+        <p class="page-sub"><span>@($"You're running {AppInfo.Version}.")</span></p>
+    </div>
+</div>
+
+<article class="release-notes">
+    @((MarkupString)ReleaseNotes.Html)
+</article>

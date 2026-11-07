@@ -1,0 +1,17 @@
+<script type="module" src="@Assets["Components/Layout/ReconnectModal.razor.js"]"></script>
+
+@* Shown by Blazor while the connection to the server is lost; styled in app.css (.reconnect). *@
+<dialog id="components-reconnect-modal" class="reconnect" data-nosnippet>
+    <div class="reconnect-body">
+        <BrandMark Size="56" Busy="true" />
+        <p class="components-reconnect-first-attempt-visible">Connecting to the server again…</p>
+        <p class="components-reconnect-repeated-attempt-visible">
+            Couldn't connect. Trying again in <span id="components-seconds-to-next-attempt"></span> seconds.
+        </p>
+        <p class="components-reconnect-failed-visible">The connection to the server was lost.</p>
+        <button id="components-reconnect-button" class="btn btn-primary components-reconnect-failed-visible">Try again</button>
+        <p class="components-pause-visible">The server paused this page.</p>
+        <p class="components-resume-failed-visible">The page couldn't continue. Try again or reload it.</p>
+        <button id="components-resume-button" class="btn btn-primary components-pause-visible components-resume-failed-visible">Continue</button>
+    </div>
+</dialog>

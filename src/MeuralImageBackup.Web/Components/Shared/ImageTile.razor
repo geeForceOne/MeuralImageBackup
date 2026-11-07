@@ -1,0 +1,38 @@
+@* One image in a grid: its thumbnail (or a placeholder when the file is missing) and, optionally,
+   a caption. Clicking it opens the viewer. *@
+<button type="button" class="tile @(Image.Exists ? "" : "tile-missing")" @onclick="OnOpen" title="@Image.Name">
+    <span class="tile-photo">
+        @if (Image.Exists)
+        {
+            <img src="@ThumbUrl(Image)" alt="" loading="lazy" decoding="async" />
+        }
+        else
+        {
+            <span class="tile-placeholder"><Icon Name="file-missing" Size="26" /><span>File missing</span></span>
+        }
+        @if (Image.AccessCount > 1)
+        {
+            <span class="tile-badge" title="@($"Shown {Image.AccessCount} times")"><Icon Name="eye" Size="12" />@Format.Number(Image.AccessCount)</span>
+        }
+    </span>
+    @if (Caption)
+    {
+        <span class="tile-caption">
+            <span class="tile-name">@Image.Name</span>
+            @if (ShowGallery)
+            {
+                <span class="tile-sub">@Image.GalleryName</span>
+            }
+        </span>
+    }
+</button>
+
+@code {
+    [Parameter, EditorRequired] public ImageView Image { get; set; } = default!;
+    [Parameter] public EventCallback OnOpen { get; set; }
+    [Parameter] public bool Caption { get; set; } = true;
+    [Parameter] public bool ShowGallery { get; set; }
+
+    // Versioned by the file's time, so browsers keep thumbnails until the file changes.
+    public static string ThumbUrl(ImageView image) => $"thumbs/{image.Id}?v={image.Version:x}";
+}

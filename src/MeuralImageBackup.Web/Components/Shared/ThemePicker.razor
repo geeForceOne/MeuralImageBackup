@@ -1,0 +1,49 @@
+@inject IJSRuntime JS
+
+@* Dark (default), Light or System, remembered per browser. App.razor applies it before the first
+   paint; this only switches it. *@
+<div class="segmented theme-picker @(Compact ? "theme-compact" : "")" role="group" aria-label="Theme">
+    @foreach (var (value, icon, label) in Choices)
+    {
+        <button type="button" class="@(_theme == value ? "on" : "")" aria-pressed="@(_theme == value ? "true" : "false")"
+                title="@label" aria-label="@label" @onclick="() => SetAsync(value)">
+            <Icon Name="@icon" Size="16" />
+            @if (!Compact)
+            {
+                <span>@label</span>
+            }
+        </button>
+    }
+</div>
+
+@code {
+    private static readonly (string Value, string Icon, string Label)[] Choices =
+        [("dark", "moon", "Dark"), ("light", "sun", "Light"), ("system", "monitor", "System")];
+
+    [Parameter] public bool Compact { get; set; }
+
+    private string _theme = "dark";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            var stored = await JS.InvokeAsync<string?>("meural.getPref", "theme");
+            if (stored is "light" or "system")
+            {
+                _theme = stored;
+                StateHasChanged();
+            }
+        }
+        catch (JSException)
+        {
+        }
+    }
+
+    private async Task SetAsync(string theme)
+    {
+        _theme = theme;
+        try { await JS.InvokeVoidAsync("meural.setTheme", theme); } catch (JSException) { }
+    }
+}

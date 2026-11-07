@@ -1,0 +1,15 @@
+**/bin/
+**/obj/
+data/
+**/database/
+**/uploads/
+**/keys/
+*.db
+.git/
+.vs/
+.vscode/
+.idea/
+.claude/
+.env
+.env.*
+tests/

@@ -1,0 +1,26 @@
+@page "/Error"
+@attribute [ExcludeFromInteractiveRouting]
+@layout MainLayout
+@using System.Diagnostics
+
+<PageTitle>Error · @AppInfo.Name</PageTitle>
+
+<div class="empty">
+    <h2>Something went wrong</h2>
+    <p>The request couldn't be completed. Try again; if it keeps happening, the server log has the details.</p>
+    @if (!string.IsNullOrEmpty(RequestId))
+    {
+        <p class="muted small">Request ID: <code>@RequestId</code></p>
+    }
+    <a class="btn btn-secondary" href="">Go to the galleries</a>
+</div>
+
+@code {
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private string? RequestId { get; set; }
+
+    protected override void OnInitialized() =>
+        RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
+}

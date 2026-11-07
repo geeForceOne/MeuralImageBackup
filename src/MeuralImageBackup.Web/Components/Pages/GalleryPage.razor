@@ -1,0 +1,139 @@
+@page "/g/{Id:int}"
+@inherits AppPage
+
+<PageTitle>@(_gallery?.Name ?? "Gallery") · @AppInfo.Name</PageTitle>
+
+@if (_library is null)
+{
+    <div class="page-loading"><BrandMark Size="40" Busy="true" /></div>
+}
+else if (_gallery is null)
+{
+    <div class="empty">
+        <h2>This gallery isn't here</h2>
+        <p>It may have been deleted.</p>
+        <a class="btn btn-secondary" href="">Go to the galleries</a>
+    </div>
+}
+else
+{
+    <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="">Galleries</a>
+        <span class="path-sep">›</span>
+        <a href="@($"?frame={Uri.EscapeDataString(_gallery.FrameName)}")">@_gallery.FrameName</a>
+    </nav>
+
+    <div class="page-head">
+        <div>
+            <h1>@_gallery.Name</h1>
+            <p class="page-sub">
+                <span><Icon Name="frame" Size="15" /> @_gallery.FrameName</span>
+                <span>@Format.Count(_gallery.Images.Count, "image", "images")</span>
+                <span>@Format.Size(_gallery.Size)</span>
+            </p>
+        </div>
+        <div class="page-actions">
+            <button type="button" class="btn btn-ghost btn-danger-text" disabled="@Busy" @onclick="DeleteGalleryAsync">
+                <Icon Name="trash" Size="16" />Delete gallery
+            </button>
+        </div>
+    </div>
+
+    <dl class="fact-strip">
+        <div><dt>Shown</dt><dd>@Format.Count(_gallery.AccessCount, "time", "times")</dd></div>
+        <div><dt>Last shown</dt><dd title="@Format.DateTime(_gallery.LastAccessedAt, Zone)">@Format.Ago(_gallery.LastAccessedAt, Zone)</dd></div>
+        <div><dt>First seen</dt><dd>@Format.Date(_gallery.CreatedAt, Zone)</dd></div>
+        @if (_gallery.Missing > 0)
+        {
+            <div class="fact-warn"><dt>Files missing</dt><dd>@Format.Number(_gallery.Missing)</dd></div>
+        }
+    </dl>
+
+    @if (_gallery.Images.Count == 0)
+    {
+        <div class="empty">
+            <Icon Name="image" Size="28" />
+            <p>No images recorded for this gallery yet.</p>
+        </div>
+    }
+    else
+    {
+        <div class="section-head">
+            <h2>Images</h2>
+            <label class="filter-select">
+                <span>Sort</span>
+                <select class="select" value="@_sort" @onchange="SortChanged">
+                    @foreach (var (key, label) in Filters.ImageSorts.Where(s => s.Key != "gallery"))
+                    {
+                        <option value="@key">@label</option>
+                    }
+                </select>
+            </label>
+        </div>
+        <div class="tile-grid">
+            @for (var i = 0; i < _images.Count; i++)
+            {
+                var index = i;
+                <ImageTile @key="_images[i].Id" Image="_images[i]" OnOpen="() => _viewing = index" />
+            }
+        </div>
+    }
+
+    <ImageViewer Images="_images" @bind-Index="_viewing" OnDelete="DeleteImageAsync" />
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private Library? _library;
+    private GalleryView? _gallery;
+    private List<ImageView> _images = [];
+    private string _sort = "recent";
+    private int _viewing = -1;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _library = await LibraryService.LoadAsync(PageToken);
+        _gallery = _library.Galleries.FirstOrDefault(g => g.Id == Id);
+        Apply();
+    }
+
+    private void SortChanged(ChangeEventArgs e)
+    {
+        _sort = e.Value?.ToString() ?? "recent";
+        Apply();
+    }
+
+    private void Apply() => _images = _gallery is null ? [] : Filters.Sort(_gallery.Images, _sort).ToList();
+
+    private async Task DeleteGalleryAsync()
+    {
+        if (_gallery is not { } g) return;
+        var ok = await Ui.Confirm.AskAsync($"Delete {g.Name}?",
+            $"This deletes the gallery of {g.FrameName} with its {Format.Count(g.Images.Count, "image", "images")} and their files ({Format.Size(g.Size)}). It can't be undone. If the frame shows it again, it's collected from scratch.",
+            "Delete gallery", danger: true);
+        if (ok && await RunAsync(() => LibraryService.DeleteGalleryAsync(g.Id, PageToken)))
+        {
+            Ui.Toast.Success($"Deleted {g.Name}.");
+            Nav.NavigateTo("");
+        }
+    }
+
+    private async Task DeleteImageAsync(ImageView image)
+    {
+        var ok = await Ui.Confirm.AskAsync(image.Exists ? $"Delete {image.Name}?" : $"Remove {image.Name}?",
+            image.Exists
+                ? "This deletes the image's file and its entry. If a frame shows it again, it's downloaded again."
+                : "Its file isn't there; this removes the entry. If a frame shows it again, it's downloaded again.",
+            image.Exists ? "Delete" : "Remove", danger: true);
+        if (!ok) return;
+        var at = _viewing;
+        if (await RunAsync(() => LibraryService.DeleteImageAsync(image.Id, PageToken)))
+        {
+            await LoadAsync();
+            _viewing = _images.Count == 0 ? -1 : Math.Min(at, _images.Count - 1);
+        }
+    }
+}

@@ -1,0 +1,20 @@
+services:
+  meuralimagebackup:
+    image: ghcr.io/geeforceone/meuralimagebackup:latest
+    # `docker compose up --build` builds from this checkout instead of pulling the published image.
+    build: .
+    ports:
+      - "8090:80"
+    environment:
+      # false leaves out the frame's folder: uploads/<gallery>/<title>.jpeg
+      USE_FRAME_NAME_IN_PATH: "true"
+    volumes:
+      # The same two volumes as MeuralImageUploader 1.x; point them at an existing installation's
+      # folders to keep its images and database.
+      - meural-uploads:/app/uploads
+      - meural-database:/app/database
+    restart: unless-stopped
+
+volumes:
+  meural-uploads:
+  meural-database:

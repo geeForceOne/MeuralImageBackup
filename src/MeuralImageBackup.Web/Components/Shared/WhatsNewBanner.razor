@@ -1,0 +1,48 @@
+@inject IJSRuntime JS
+
+@* After an update, tells this browser once what's new; stays until it's closed. Remembered per
+   browser, since there are no users (WhatsNew decides). *@
+@if (_version is not null)
+{
+    <div class="banner" role="status">
+        <Icon Name="file" />
+        <p>
+            @($"{AppInfo.Name} was updated to {_version}.")
+            <a href="release-notes" @onclick="DismissAsync">See what's new</a>
+        </p>
+        <button type="button" class="btn btn-ghost btn-icon btn-sm" aria-label="Close" title="Close" @onclick="DismissAsync">
+            <Icon Name="x" Size="16" />
+        </button>
+    </div>
+}
+
+@code {
+    private const string Key = "seenVersion";
+    private string? _version;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            var seen = await JS.InvokeAsync<string?>("meural.getPref", Key);
+            var (show, store) = WhatsNew.Decide(seen, AppInfo.Version);
+            if (store)
+                await JS.InvokeVoidAsync("meural.setPref", Key, AppInfo.Version);
+            if (show is not null)
+            {
+                _version = show;
+                StateHasChanged();
+            }
+        }
+        catch (JSException)
+        {
+        }
+    }
+
+    private async Task DismissAsync()
+    {
+        _version = null;
+        try { await JS.InvokeVoidAsync("meural.setPref", Key, AppInfo.Version); } catch (JSException) { }
+    }
+}

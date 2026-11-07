@@ -1,0 +1,90 @@
+
+@if (_visible)
+{
+    <div class="modal-backdrop">
+        <div class="modal @(_multiline ? "modal-wide" : "")" role="dialog" aria-modal="true" aria-labelledby="prompt-title">
+            <h2 id="prompt-title">@_title</h2>
+            @if (_hint is not null)
+            {
+                <p>@_hint</p>
+            }
+            <label class="field">
+                <span>@_label</span>
+                @if (_multiline)
+                {
+                    <textarea data-bwignore="true" class="textarea" rows="5" @bind="_value" @bind:event="oninput" @onkeydown="OnKeyDown" @ref="_input"></textarea>
+                }
+                else
+                {
+                    <input data-bwignore="true" class="input" type="@_type" @bind="_value" @bind:event="oninput" @onkeydown="OnKeyDown" @ref="_input" autocomplete="off" />
+                }
+            </label>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" @onclick="() => Resolve(null)">Cancel</button>
+                <button type="button" class="btn btn-primary" disabled="@(!_allowEmpty && string.IsNullOrWhiteSpace(_value))" @onclick="Submit">@_okLabel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _visible;
+    private bool _focusPending;
+    private bool _multiline;
+    private bool _allowEmpty;
+    private string _title = "";
+    private string _label = "";
+    private string? _hint;
+    private string _okLabel = "";
+    private string _value = "";
+    private string _type = "text";
+    private ElementReference _input;
+    private TaskCompletionSource<string?>? _tcs;
+
+    // Resolves to the trimmed text, or null if canceled. allowEmpty: for optional text, OK works
+    // with an empty box (and resolves to ""). type: "text", "email" or "password".
+    public Task<string?> AskAsync(string title, string label, string initialValue = "", string? okLabel = null,
+        string? hint = null, bool multiline = false, bool allowEmpty = false, string type = "text")
+    {
+        _tcs?.TrySetResult(null);
+        _title = title;
+        _label = label;
+        _value = initialValue;
+        _okLabel = okLabel ?? "Save";
+        _hint = hint;
+        _multiline = multiline;
+        _allowEmpty = allowEmpty;
+        _type = type;
+        _visible = true;
+        _focusPending = true;
+        _tcs = new TaskCompletionSource<string?>();
+        StateHasChanged();
+        return _tcs.Task;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusPending) return;
+        _focusPending = false;
+        try { await _input.FocusAsync(); } catch (JSException) { }
+    }
+
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+            Resolve(null);
+        else if (e.Key == "Enter" && !_multiline && (_allowEmpty || !string.IsNullOrWhiteSpace(_value)))
+            Submit();
+    }
+
+    private void Submit() => Resolve(_type == "password" ? _value : _value.Trim());
+
+    private void Resolve(string? result)
+    {
+        _visible = false;
+        var tcs = _tcs;
+        _tcs = null;
+        StateHasChanged();
+        tcs?.TrySetResult(result);
+    }
+}

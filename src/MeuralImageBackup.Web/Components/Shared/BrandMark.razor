@@ -1,0 +1,45 @@
+@* The app's mark: a framed picture (hills and a coral sun) hanging in front of its copy, the
+   backup. Below 40 px a simpler drawing with bolder lines is used, since the full one blurs at
+   header and favicon sizes. wwwroot/favicon.svg is the simple mark with fixed colors; keep the two
+   in step.
+   wwwroot/js/brand-motion.js animates it (copy, shine, swing, develop): once when the header logo is
+   hovered or focused, once when a PlayOnLoad logo appears, and in a loop while Busy. It only
+   animates existing elements, so Blazor's rendering isn't disturbed. *@
+@{ var m = Size >= 40 ? Full : Simple; }
+<svg class="brand-mark" width="@Size" height="@Size" viewBox="0 0 64 64" aria-hidden="true"
+     data-motion="@(Busy ? "loop" : PlayOnLoad ? "once" : null)">
+    <rect class="bm-copy" x="@N(m.CopyX)" y="@N(m.CopyY)" width="@N(m.W)" height="@N(m.H)" rx="@N(m.Line)"
+          fill="none" stroke="var(--brand)" stroke-width="@N(m.Line)" stroke-opacity=".5" stroke-linejoin="round" />
+    <g class="bm-front">
+        <rect x="@N(m.X)" y="@N(m.Y)" width="@N(m.W)" height="@N(m.H)" rx="@N(m.Line)"
+              fill="var(--logo-fill)" stroke="var(--brand)" stroke-width="@N(m.Line)" stroke-linejoin="round" />
+        <path class="bm-hills" d="@m.Hills" fill="none" stroke="var(--brand)" stroke-width="@N(m.Line * 0.8)"
+              stroke-linecap="round" stroke-linejoin="round" />
+        <circle class="bm-sun" cx="@N(m.SunX)" cy="@N(m.SunY)" r="@N(m.Sun)" fill="var(--brand-lit)" />
+    </g>
+</svg>
+
+@code {
+    private sealed record Mark(double X, double Y, double W, double H, double CopyX, double CopyY, string Hills,
+        double SunX, double SunY, double Sun, double Line);
+
+    // The copy sits up and to the right, so the front picture reads as "the one on the wall".
+    private static readonly Mark Full = new(
+        X: 7, Y: 20, W: 42, H: 34, CopyX: 17, CopyY: 9,
+        Hills: "M12 48L22 37L29 43.5L35 37.5L44 48", SunX: 38.5, SunY: 29.5, Sun: 3.8, Line: 3);
+
+    private static readonly Mark Simple = new(
+        X: 5, Y: 21, W: 44, H: 36, CopyX: 15, CopyY: 7,
+        Hills: "M11 51L22 39L30 47L44 51", SunX: 38, SunY: 31, Sun: 5, Line: 4.6);
+
+    // SVG wants a decimal point whatever the page's number format is ("4,6" would be dropped).
+    private static string N(double value) => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    [Parameter] public int Size { get; set; } = 30;
+
+    // Loops the animation, for the busy indicator.
+    [Parameter] public bool Busy { get; set; }
+
+    // Plays one motion shortly after the logo appears.
+    [Parameter] public bool PlayOnLoad { get; set; }
+}

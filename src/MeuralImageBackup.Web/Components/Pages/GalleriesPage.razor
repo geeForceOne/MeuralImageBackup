@@ -1,0 +1,272 @@
+@page "/"
+@page "/Gallery"
+@inherits AppPage
+@inject IJSRuntime JS
+
+<PageTitle>Galleries · @AppInfo.Name</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1>Galleries</h1>
+        @if (_library is { } lib)
+        {
+            <p class="page-sub">
+                <span>@Format.Count(lib.Galleries.Count, "gallery", "galleries") on @Format.Count(lib.Frames.Count, "frame", "frames")</span>
+            </p>
+        }
+    </div>
+</div>
+
+@if (_library is null)
+{
+    <div class="page-loading"><BrandMark Size="40" Busy="true" /></div>
+}
+else if (_library.Galleries.Count == 0)
+{
+    <div class="empty">
+        <BrandMark Size="64" PlayOnLoad="true" />
+        <h2>Nothing collected yet</h2>
+        <p>As soon as Home Assistant reports the first image a frame shows, its gallery appears here and the image is saved.</p>
+        <p class="small"><code>POST /api/meural</code> with <code>frameName</code>, <code>gallery</code>, <code>title</code>, <code>url</code> and <code>id</code>.</p>
+    </div>
+}
+else
+{
+    <div class="stats">
+        <div class="stat"><span class="stat-value num">@Format.Number(_library.Galleries.Count)</span><span class="stat-label">Galleries</span></div>
+        <a class="stat" href="images"><span class="stat-value num">@Format.Number(_library.Images.Count)</span><span class="stat-label">Images</span></a>
+        <div class="stat"><span class="stat-value num">@Format.Size(_library.DiskSize)</span><span class="stat-label">On disk</span></div>
+        @if (_missing > 0)
+        {
+            <a class="stat stat-warn" href="images?missing=true"><span class="stat-value num">@Format.Number(_missing)</span><span class="stat-label">Files missing</span></a>
+        }
+    </div>
+
+    <div class="filters">
+        <label class="filter-search">
+            <Icon Name="search" />
+            <input data-bwignore="true" type="search" placeholder="Find a gallery" aria-label="Find a gallery"
+                   value="@Q" @oninput="e => Set(q: e.Value?.ToString())" />
+        </label>
+        @if (_library.Frames.Count > 1)
+        {
+            <label class="filter-select">
+                <span>Frame</span>
+                <select class="select" value="@(Frame ?? "")" @onchange="e => Set(frame: e.Value?.ToString())">
+                    <option value="">All frames</option>
+                    @foreach (var f in _library.Frames)
+                    {
+                        <option value="@f">@f</option>
+                    }
+                </select>
+            </label>
+        }
+        <label class="filter-select">
+            <span>Not shown for</span>
+            <select class="select" value="@(Age?.ToString() ?? "")" @onchange="e => Set(age: int.TryParse(e.Value?.ToString(), out var d) ? d : 0)">
+                @foreach (var (days, label) in Filters.Ages)
+                {
+                    <option value="@(days?.ToString() ?? "")">@label</option>
+                }
+            </select>
+        </label>
+        <label class="filter-select">
+            <span>Sort</span>
+            <select class="select" value="@(Sort ?? "recent")" @onchange="e => Set(sort: e.Value?.ToString())">
+                @foreach (var (key, label) in Filters.GallerySorts)
+                {
+                    <option value="@key">@label</option>
+                }
+            </select>
+        </label>
+        <div class="segmented filter-view" role="group" aria-label="View">
+            <button type="button" class="@(_view == "grid" ? "on" : "")" aria-pressed="@(_view == "grid" ? "true" : "false")" title="Cards" aria-label="Cards" @onclick='() => SetViewAsync("grid")'><Icon Name="grid" Size="16" /></button>
+            <button type="button" class="@(_view == "table" ? "on" : "")" aria-pressed="@(_view == "table" ? "true" : "false")" title="Table" aria-label="Table" @onclick='() => SetViewAsync("table")'><Icon Name="list" Size="16" /></button>
+        </div>
+    </div>
+
+    @if (Age is not null && _shown.Count > 0)
+    {
+        <div class="notice notice-warn notice-row">
+            <Icon Name="broom" />
+            <span>
+                @($"{Format.Count(_shown.Count, "gallery hasn't", "galleries haven't")} been shown for {Filters.Ages.First(a => a.Days == Age).Label}, with {Format.Count(_shown.Sum(g => g.Images.Count), "image", "images")} ({Format.Size(_shown.Sum(g => g.Size))}).")
+            </span>
+            <button type="button" class="btn btn-danger btn-sm" disabled="@Busy" @onclick="DeleteShownAsync">
+                <Icon Name="trash" Size="16" />@($"Delete {Format.Count(_shown.Count, "gallery", "galleries")}")
+            </button>
+        </div>
+    }
+
+    @if (_shown.Count == 0)
+    {
+        <div class="empty">
+            <Icon Name="search" Size="28" />
+            <p>No gallery matches these filters.</p>
+            <button type="button" class="btn btn-secondary" @onclick="ClearFilters">Show all galleries</button>
+        </div>
+    }
+    else if (_view == "table")
+    {
+        var showFrame = _library.Frames.Count > 1;
+        <div class="table-scroll">
+            <table class="table image-table gallery-table">
+                <thead>
+                    <tr>
+                        <th class="image-table-photo"><span class="visually-hidden">Cover</span></th>
+                        <th>@SortHeader("name", "Name")</th>
+                        @if (showFrame)
+                        {
+                            <th>@SortHeader("frame", "Frame")</th>
+                        }
+                        <th class="num">@SortHeader("images", "Images")</th>
+                        <th class="num">@SortHeader("shown", "Shown")</th>
+                        <th>@SortHeader("recent", "Last shown")</th>
+                        <th class="hide-tablet">@SortHeader("added", "Added")</th>
+                        <th class="num hide-tablet">@SortHeader("size", "Size")</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var g in _shown)
+                    {
+                        var gallery = g;
+                        var cover = g.Images.FirstOrDefault(i => i.Exists);
+                        <tr @key="g.Id" class="clickable" @onclick='() => Nav.NavigateTo($"g/{gallery.Id}")'>
+                            <td class="image-table-photo">
+                                @if (cover is not null)
+                                {
+                                    <img src="@ImageTile.ThumbUrl(cover)" alt="" loading="lazy" decoding="async" />
+                                }
+                                else
+                                {
+                                    <span class="image-table-nophoto" title="@(g.Images.Count == 0 ? "No images yet" : "Files missing")"><Icon Name="image" Size="18" /></span>
+                                }
+                            </td>
+                            <td class="image-table-name" data-label="Name">
+                                <a href="@($"g/{g.Id}")" @onclick:stopPropagation="true">@g.Name</a>
+                                @if (g.Missing > 0)
+                                {
+                                    <span class="tag tag-warn">@Format.Count(g.Missing, "file missing", "files missing")</span>
+                                }
+                            </td>
+                            @if (showFrame)
+                            {
+                                <td data-label="Frame">@g.FrameName</td>
+                            }
+                            <td class="num" data-label="Images">@Format.Number(g.Images.Count)</td>
+                            <td class="num" data-label="Shown">@Format.Number(g.AccessCount)</td>
+                            <td data-label="Last shown" title="@Format.DateTime(g.LastAccessedAt, Zone)">@Format.Date(g.LastAccessedAt, Zone)</td>
+                            <td class="hide-tablet" data-label="Added" title="@Format.DateTime(g.CreatedAt, Zone)">@Format.Date(g.CreatedAt, Zone)</td>
+                            <td class="num muted hide-tablet" data-label="Size">@Format.Size(g.Size)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        <div class="gallery-grid">
+            @foreach (var g in _shown)
+            {
+                <GalleryCard @key="g.Id" Gallery="g" ShowFrame="@(_library.Frames.Count > 1)" />
+            }
+        </div>
+    }
+}
+
+@code {
+    [SupplyParameterFromQuery] public string? Q { get; set; }
+    [SupplyParameterFromQuery] public string? Frame { get; set; }
+    [SupplyParameterFromQuery] public int? Age { get; set; }
+    [SupplyParameterFromQuery] public string? Sort { get; set; }
+
+    private Library? _library;
+    private List<GalleryView> _shown = [];
+    private int _missing;
+    private string _view = "grid";
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    protected override void OnParametersSet() => Apply();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            if (await JS.InvokeAsync<string?>("meural.getPref", "galleriesView") == "table")
+            {
+                _view = "table";
+                StateHasChanged();
+            }
+        }
+        catch (JSException)
+        {
+        }
+    }
+
+    private async Task SetViewAsync(string view)
+    {
+        _view = view;
+        try { await JS.InvokeVoidAsync("meural.setPref", "galleriesView", view); } catch (JSException) { }
+    }
+
+    private RenderFragment SortHeader(string key, string label) => __builder =>
+    {
+        var on = (Sort ?? "recent") == key;
+        <button type="button" class="sort-button" @onclick="() => Set(sort: key)" aria-pressed="@(on ? "true" : "false")">
+            @label@if (on) {<span class="sort-mark"> ▾</span>}
+        </button>
+    };
+
+    private async Task LoadAsync()
+    {
+        _library = await LibraryService.LoadAsync(PageToken);
+        _missing = _library.Images.Count(i => !i.Exists);
+        Apply();
+    }
+
+    private void Apply()
+    {
+        if (_library is null) return;
+        var matching = _library.Galleries.Where(g =>
+            Filters.Matches(Q, g.Name) &&
+            (Frame is null || g.FrameName == Frame) &&
+            Filters.OlderThan(g.LastAccessedAt, Age));
+        _shown = Filters.Sort(matching, Sort).ToList();
+    }
+
+    // Changes some filters, keeping the others; "" or 0 clears one.
+    private void Set(string? q = null, string? frame = null, int? age = null, string? sort = null)
+    {
+        ReplaceQuery(new Dictionary<string, object?>
+        {
+            ["q"] = q is null ? Q : q.Length == 0 ? null : q,
+            ["frame"] = frame is null ? Frame : frame.Length == 0 ? null : frame,
+            ["age"] = age is null ? Age : age == 0 ? null : age,
+            ["sort"] = sort is null ? Sort : sort == "recent" ? null : sort,
+        });
+    }
+
+    private void ClearFilters() =>
+        ReplaceQuery(new Dictionary<string, object?> { ["q"] = null, ["frame"] = null, ["age"] = null, ["sort"] = Sort });
+
+    private async Task DeleteShownAsync()
+    {
+        var galleries = _shown.ToList();
+        var images = galleries.Sum(g => g.Images.Count);
+        var ok = await Ui.Confirm.AskAsync(
+            $"Delete {Format.Count(galleries.Count, "gallery", "galleries")}?",
+            $"This deletes {Format.Count(galleries.Count, "gallery", "galleries")} with {Format.Count(images, "image", "images")} and their files ({Format.Size(galleries.Sum(g => g.Size))}). It can't be undone. If a frame shows one of them again, it's collected from scratch.",
+            "Delete", danger: true);
+        if (!ok) return;
+
+        var deleted = 0;
+        if (await RunAsync(async () => deleted = await LibraryService.DeleteGalleriesAsync(galleries.Select(g => g.Id), PageToken)))
+        {
+            Ui.Toast.Success($"Deleted {Format.Count(deleted, "gallery", "galleries")}.");
+            await LoadAsync();
+        }
+    }
+}

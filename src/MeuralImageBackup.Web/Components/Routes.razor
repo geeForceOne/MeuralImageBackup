@@ -1,0 +1,17 @@
+<CascadingValue Value="_ui" IsFixed="true">
+    <Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+        <Found Context="routeData">
+            <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
+            <FocusOnNavigate RouteData="routeData" Selector="h1" />
+        </Found>
+    </Router>
+</CascadingValue>
+
+@code {
+    // The browser's time zone id, from the cookie App.razor reads.
+    [Parameter] public string? TimeZone { get; set; }
+
+    private AppUi _ui = default!;
+
+    protected override void OnInitialized() => _ui = new AppUi { Zone = AppUi.FindZone(TimeZone) };
+}

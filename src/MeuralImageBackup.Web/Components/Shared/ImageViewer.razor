@@ -1,0 +1,115 @@
+@inject IJSRuntime JS
+
+@* One image large, with what's known about it. Left and Right go through the list, Escape or the
+   close button ends it; clicking beside the image doesn't (like every dialog here). *@
+@if (Current is { } image)
+{
+    <div class="viewer" role="dialog" aria-modal="true" aria-label="@image.Name" tabindex="-1"
+         @ref="_root" @onkeydown="OnKeyDown">
+        <div class="viewer-stage">
+            @if (image.Exists)
+            {
+                <img @key="image.Id" src="@image.Url" alt="@image.Name" />
+            }
+            else
+            {
+                <div class="tile-placeholder viewer-missing">
+                    <Icon Name="file-missing" Size="40" />
+                    <span>The file isn't there.</span>
+                    <code>@image.RelativePath</code>
+                </div>
+            }
+            <button type="button" class="viewer-nav viewer-prev" aria-label="Previous image" title="Previous (←)"
+                    disabled="@(Index <= 0)" @onclick="() => GoAsync(-1)">
+                <Icon Name="left" Size="26" />
+            </button>
+            <button type="button" class="viewer-nav viewer-next" aria-label="Next image" title="Next (→)"
+                    disabled="@(Index >= Images.Count - 1)" @onclick="() => GoAsync(1)">
+                <Icon Name="right" Size="26" />
+            </button>
+        </div>
+
+        <aside class="viewer-panel">
+            <div class="viewer-head">
+                <span class="viewer-count num">@($"{Format.Number(Index + 1)} of {Format.Number(Images.Count)}")</span>
+                <button type="button" class="btn btn-ghost btn-icon" aria-label="Close" title="Close (Esc)" @onclick="CloseAsync">
+                    <Icon Name="x" />
+                </button>
+            </div>
+            <h2>@image.Name</h2>
+            <p class="viewer-where">
+                <a href="@($"g/{image.GalleryId}")" @onclick="CloseAsync">@image.GalleryName</a>
+                <span class="path-sep">·</span>
+                <span><Icon Name="frame" Size="14" /> @image.FrameName</span>
+            </p>
+            <dl class="facts">
+                <dt>Shown</dt><dd>@Format.Count(image.AccessCount, "time", "times")</dd>
+                <dt>Last shown</dt><dd>@Format.DateTime(image.LastAccessedAt, Ui.Zone)</dd>
+                <dt>First seen</dt><dd>@Format.DateTime(image.CreatedAt, Ui.Zone)</dd>
+                <dt>Meural id</dt><dd class="num">@image.FileId</dd>
+                @if (image.Exists)
+                {
+                    <dt>File size</dt><dd>@Format.Size(image.Size)</dd>
+                }
+                <dt>File</dt><dd class="facts-path"><code>@image.RelativePath</code></dd>
+            </dl>
+            <div class="viewer-actions">
+                @if (image.Exists)
+                {
+                    <a class="btn btn-secondary" href="@image.Url" target="_blank" rel="noopener"><Icon Name="external" Size="16" />Open</a>
+                    <a class="btn btn-secondary" href="@image.Url" download="@System.IO.Path.GetFileName(image.RelativePath)"><Icon Name="download" Size="16" />Download</a>
+                }
+                @if (OnDelete.HasDelegate)
+                {
+                    <button type="button" class="btn btn-ghost btn-danger-text" @onclick="() => OnDelete.InvokeAsync(image)">
+                        <Icon Name="trash" Size="16" />@(image.Exists ? "Delete" : "Remove entry")
+                    </button>
+                }
+            </div>
+        </aside>
+    </div>
+}
+
+@code {
+    [CascadingParameter] private AppUi Ui { get; set; } = default!;
+
+    [Parameter, EditorRequired] public IReadOnlyList<ImageView> Images { get; set; } = [];
+
+    // The image shown, or -1 for none (closed).
+    [Parameter] public int Index { get; set; } = -1;
+    [Parameter] public EventCallback<int> IndexChanged { get; set; }
+    [Parameter] public EventCallback<ImageView> OnDelete { get; set; }
+
+    private ElementReference _root;
+
+    private ImageView? Current => Index >= 0 && Index < Images.Count ? Images[Index] : null;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Keep the focus in the viewer while it's open (also after a confirmation dialog closed), so
+        // the arrow keys and Escape reach it.
+        if (Current is null) return;
+        try { await JS.InvokeVoidAsync("meural.keepFocus", _root); } catch (JSException) { }
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") await CloseAsync();
+        else if (e.Key == "ArrowLeft") await GoAsync(-1);
+        else if (e.Key == "ArrowRight") await GoAsync(1);
+    }
+
+    private async Task GoAsync(int step)
+    {
+        var next = Index + step;
+        if (next < 0 || next >= Images.Count) return;
+        Index = next;
+        await IndexChanged.InvokeAsync(next);
+    }
+
+    private async Task CloseAsync()
+    {
+        Index = -1;
+        await IndexChanged.InvokeAsync(-1);
+    }
+}

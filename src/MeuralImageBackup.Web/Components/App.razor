@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    @* Before any paint: the theme this browser picked (dark, light or system; dark when none), and
+       "system" follows the device when it changes. ThemePicker calls meural.applyTheme to switch
+       without a reload. The browser's time zone goes along as a cookie, for dates on the server. *@
+    <script>
+        (function () {
+            var media = window.matchMedia("(prefers-color-scheme: light)"), pref;
+            window.meuralApplyTheme = function (p) {
+                pref = p === "light" || p === "system" ? p : "dark";
+                document.documentElement.dataset.theme = pref === "system" ? (media.matches ? "light" : "dark") : pref;
+            };
+            media.addEventListener("change", function () { if (pref === "system") window.meuralApplyTheme(pref); });
+            var stored = null;
+            try { stored = localStorage.getItem("mib.theme"); } catch (e) { }
+            window.meuralApplyTheme(stored);
+            try {
+                var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                if (tz) document.cookie = "mib-tz=" + encodeURIComponent(tz) + "; path=/; max-age=31536000; samesite=lax";
+            } catch (e) { }
+        })();
+    </script>
+    <base href="/" />
+    <ResourcePreloader />
+    <link rel="preload" href="fonts/plex-sans-latin-400.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="@Assets["fonts/fonts.css"]" />
+    <link rel="stylesheet" href="@Assets["css/app.css"]" />
+    <link rel="icon" type="image/svg+xml" href="@Assets["favicon.svg"]" />
+    <meta name="theme-color" content="#121316" />
+    <ImportMap />
+    <HeadOutlet @rendermode="PageRenderMode" />
+</head>
+
+<body>
+    <Routes @rendermode="PageRenderMode" TimeZone="@_timeZone" />
+    <ReconnectModal />
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script src="@Assets["js/app.js"]"></script>
+    <script src="@Assets["js/brand-motion.js"]"></script>
+</body>
+
+</html>
+
+@code {
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    private string? _timeZone;
+
+    protected override void OnInitialized() => _timeZone = HttpContext.Request.Cookies["mib-tz"];
+
+    // Every page is interactive, without prerendering (the error page renders statically).
+    private IComponentRenderMode? PageRenderMode =>
+        HttpContext.AcceptsInteractiveRouting() ? new InteractiveServerRenderMode(prerender: false) : null;
+}
