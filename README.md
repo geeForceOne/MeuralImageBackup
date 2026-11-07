@@ -24,7 +24,7 @@ services:
 - `/app/database`: the SQLite database `meural.db` (and the app's keys).
 - `USE_FRAME_NAME_IN_PATH=false` leaves out the frame's folder: `<gallery>/<title>.jpeg`.
 
-The image is also published to Docker Hub under MeuralImageUploader's old name, so existing installations update by pulling `latest`.
+Coming from MeuralImageUploader 1.x? Change the image to `ghcr.io/geeforceone/meuralimagebackup` and keep your volumes; everything else stays the same.
 
 ## API
 

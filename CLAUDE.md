@@ -73,7 +73,7 @@ Latest .NET (currently .NET 10, `net10.0`), Blazor Server, `.slnx` solution.
 - **Thumbnails** (SkiaSharp, longest side 480 px) are only a cache, in the temp folder by default, keyed by the original's path, size and time; never put them in a volume.
 - **Region format and time zone come from the browser**: the culture from `Accept-Language` (de-CH when it doesn't say), the time zone from the `mib-tz` cookie App.razor's script sets (cascaded as `AppUi.Zone`). Times are stored in UTC.
 - A new repository, github.com/geeForceOne/MeuralImageBackup; the old MeuralImageUploader repository stays as it is.
-- A `vX.Y.Z` tag runs GitHub Actions: `docker-publish.yml` sends the image to `ghcr.io/geeforceone/meuralimagebackup` **and** to Docker Hub under the old name (`geeforceone/meuralimageuploader`, Visual Studio's default from the project name; confirm on Docker Hub before the first release), each as X.Y.Z / X.Y / latest, so existing installs pulling `:latest` get the new version without changing anything. Docker Hub credentials come from Actions secrets (`DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`). The workflow also creates the GitHub release from that version's `CHANGELOG.md` section. The version is passed as a build argument and shows in the app and in `/api/version`.
+- A `vX.Y.Z` tag runs GitHub Actions: `docker-publish.yml` sends the image to `ghcr.io/geeforceone/meuralimagebackup` only (no Docker Hub), as X.Y.Z / X.Y / latest. Existing MeuralImageUploader installs switch by changing the image name; everything else stays compatible. The workflow also creates the GitHub release from that version's `CHANGELOG.md` section. The version is passed as a build argument and shows in the app and in `/api/version`.
 
 ## Conventions
 
