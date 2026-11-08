@@ -50,7 +50,8 @@ public class CompatibilityTests
 
         await using (var ctx = db.CreateDbContext())
         {
-            Assert.Empty(await ctx.Database.GetPendingMigrationsAsync());
+            // Only the migrations added since MeuralImageUploader are left to apply.
+            Assert.DoesNotContain(await ctx.Database.GetPendingMigrationsAsync(), m => m.StartsWith("2023", StringComparison.Ordinal));
             await ctx.Database.MigrateAsync();
         }
 

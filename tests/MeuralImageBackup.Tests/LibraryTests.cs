@@ -86,7 +86,7 @@ public class LibraryTests
         var library = Library(storage, db);
         var a = (await library.LoadAsync()).Images.Single(i => i.Name == "a");
 
-        await library.DeleteImageAsync(a.Id);
+        await library.DeleteImageAsync(a.Id, a.GalleryId);
 
         Assert.False(File.Exists(storage.Upload("F/G/a.jpeg")));
         Assert.True(File.Exists(storage.Upload("F/G/b.jpeg")));

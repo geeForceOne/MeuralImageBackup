@@ -9,7 +9,7 @@
         <div class="viewer-stage">
             @if (image.Exists)
             {
-                <img @key="image.Id" src="@image.Url" alt="@image.Name" />
+                <img @key="image.Key" src="@image.Url" alt="@image.Name" />
             }
             else
             {

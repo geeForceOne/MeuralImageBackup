@@ -34,5 +34,5 @@
     [Parameter] public bool ShowGallery { get; set; }
 
     // Versioned by the file's time, so browsers keep thumbnails until the file changes.
-    public static string ThumbUrl(ImageView image) => $"thumbs/{image.Id}?v={image.Version:x}";
+    public static string ThumbUrl(ImageView image) => $"thumbs/{image.Id}?g={image.GalleryId}&v={image.Version:x}";
 }

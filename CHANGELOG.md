@@ -1,5 +1,17 @@
 # Release notes
 
+## 2.1.0 - 2026-11-08
+
+### New
+
+- **Sync with disk** on the Galleries page: adds what's in the uploads folder but missing from the database. Folders become galleries, and images found in a gallery's folder are listed in that gallery. Nothing is removed.
+- An image can now be in several galleries. When a frame shows it from another gallery (for example after a gallery was renamed in Meural), it's listed there too, instead of only in the gallery that showed it first.
+
+### Fixed
+
+- Galleries whose images had all been seen in another gallery first showed "No images yet", although their folder was full. Run Sync with disk once to fill them.
+- Deleting an image or a gallery only removes that gallery's copy; the image stays in its other galleries.
+
 ## 2.0.0 - 2026-11-08
 
 MeuralImageUploader is now MeuralImageBackup: rebuilt on .NET 10 with a new interface. It's a drop-in replacement: the same port, volumes, database, folders and API, so Home Assistant and an existing installation keep working.
