@@ -1,6 +1,6 @@
 # Release notes
 
-## 2.0.0 - unreleased
+## 2.0.0 - 2026-11-08
 
 MeuralImageUploader is now MeuralImageBackup: rebuilt on .NET 10 with a new interface. It's a drop-in replacement: the same port, volumes, database, folders and API, so Home Assistant and an existing installation keep working.
 
