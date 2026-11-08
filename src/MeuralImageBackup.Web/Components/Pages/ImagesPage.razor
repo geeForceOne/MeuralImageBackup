@@ -122,7 +122,7 @@ else
                     {
                         var index = i;
                         var image = _shown[i];
-                        <tr @key="image.Id" class="clickable @(image.Exists ? "" : "missing")" @onclick="() => _viewing = index">
+                        <tr @key="image.Key" class="clickable @(image.Exists ? "" : "missing")" @onclick="() => _viewing = index">
                             <td class="image-table-photo">
                                 @if (image.Exists)
                                 {
@@ -160,7 +160,7 @@ else
             @for (var i = 0; i < Math.Min(_limit, _shown.Count); i++)
             {
                 var index = i;
-                <ImageTile @key="_shown[i].Id" Image="_shown[i]" ShowGallery="true" OnOpen="() => _viewing = index" />
+                <ImageTile @key="_shown[i].Key" Image="_shown[i]" ShowGallery="true" OnOpen="() => _viewing = index" />
             }
         </div>
     }
@@ -291,7 +291,7 @@ else
             image.Exists ? "Delete" : "Remove", danger: true);
         if (!ok) return;
         var at = _viewing;
-        if (await RunAsync(() => LibraryService.DeleteImageAsync(image.Id, PageToken)))
+        if (await RunAsync(() => LibraryService.DeleteImageAsync(image.Id, image.GalleryId, PageToken)))
         {
             await LoadAsync();
             _viewing = _shown.Count == 0 ? -1 : Math.Min(at, _shown.Count - 1);

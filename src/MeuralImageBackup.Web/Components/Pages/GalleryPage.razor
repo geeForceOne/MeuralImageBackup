@@ -74,7 +74,7 @@ else
             @for (var i = 0; i < _images.Count; i++)
             {
                 var index = i;
-                <ImageTile @key="_images[i].Id" Image="_images[i]" OnOpen="() => _viewing = index" />
+                <ImageTile @key="_images[i].Key" Image="_images[i]" OnOpen="() => _viewing = index" />
             }
         </div>
     }
@@ -130,7 +130,7 @@ else
             image.Exists ? "Delete" : "Remove", danger: true);
         if (!ok) return;
         var at = _viewing;
-        if (await RunAsync(() => LibraryService.DeleteImageAsync(image.Id, PageToken)))
+        if (await RunAsync(() => LibraryService.DeleteImageAsync(image.Id, image.GalleryId, PageToken)))
         {
             await LoadAsync();
             _viewing = _images.Count == 0 ? -1 : Math.Min(at, _images.Count - 1);

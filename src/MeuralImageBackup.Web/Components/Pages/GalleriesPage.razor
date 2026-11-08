@@ -15,6 +15,15 @@
             </p>
         }
     </div>
+    @if (_library is not null)
+    {
+        <div class="page-actions">
+            <button type="button" class="btn btn-secondary" disabled="@Busy" @onclick="SyncAsync"
+                    title="Adds the galleries and images found in the uploads folder that the database doesn't list">
+                <Icon Name="sync" Size="16" />Sync with disk
+            </button>
+        </div>
+    }
 </div>
 
 @if (_library is null)
@@ -251,6 +260,29 @@ else
 
     private void ClearFilters() =>
         ReplaceQuery(new Dictionary<string, object?> { ["q"] = null, ["frame"] = null, ["age"] = null, ["sort"] = Sort });
+
+    // Adds what's in the uploads folder but not in the database; nothing is removed.
+    private async Task SyncAsync()
+    {
+        SyncResult? result = null;
+        if (!await RunAsync(async () => result = await LibraryService.SyncWithDiskAsync(null, PageToken)) || result is null)
+            return;
+        if (result.Changed)
+        {
+            var parts = new List<string>();
+            if (result.GalleriesAdded > 0) parts.Add($"{Format.Count(result.GalleriesAdded, "gallery", "galleries")} added");
+            if (result.ImagesAdded > 0) parts.Add($"{Format.Count(result.ImagesAdded, "image", "images")} added");
+            if (result.ImagesLinked > 0) parts.Add($"{Format.Count(result.ImagesLinked, "image", "images")} now also listed in a second gallery");
+            Ui.Toast.Success("Synced: " + string.Join(", ", parts) + ".");
+        }
+        else
+        {
+            Ui.Toast.Success("Everything on disk is listed already.");
+        }
+        if (result.Skipped > 0)
+            Ui.Toast.Info($"{Format.Count(result.Skipped, "file was", "files were")} skipped: not in a gallery folder, or the name matches several images. See the log.");
+        await LoadAsync();
+    }
 
     private async Task DeleteShownAsync()
     {

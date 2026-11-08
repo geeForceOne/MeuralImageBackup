@@ -8,7 +8,7 @@
         }
         @foreach (var image in cover)
         {
-            <img @key="image.Id" src="@ImageTile.ThumbUrl(image)" alt="" loading="lazy" decoding="async" />
+            <img @key="image.Key" src="@ImageTile.ThumbUrl(image)" alt="" loading="lazy" decoding="async" />
         }
     </span>
     <span class="gallery-body">

@@ -66,6 +66,9 @@ public sealed class UploadService(IDbContextFactory<MeuralDb> dbFactory, ImagePa
     }
 
     // An image is one row per Meural file id, wherever it's shown later; without an id nothing is recorded.
+    // Shown from another gallery than its own, it's linked to that gallery too (its file is saved there
+    // as well). An entry the sync made from a file without knowing the id (FileId 0) gets the id when
+    // the frame shows that image in that gallery.
     internal async Task RegisterImageAsync(int galleryId, int? fileId, string? name, CancellationToken ct)
     {
         if (fileId is null)
@@ -74,17 +77,32 @@ public sealed class UploadService(IDbContextFactory<MeuralDb> dbFactory, ImagePa
         var now = DateTime.UtcNow;
 
         await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var image = await db.Images.FirstOrDefaultAsync(i => i.FileId == fileId, ct);
+        var image = await db.Images.FirstOrDefaultAsync(i => i.FileId == fileId, ct)
+            ?? await FromSyncAsync(db, galleryId, FileNaming.FileName(name, fileId), ct);
         if (image is null)
         {
             db.Images.Add(new Image { GalleryId = galleryId, FileId = fileId.Value, Name = name, AccessCount = 1, CreatedAt = now, LastAccessedAt = now });
         }
         else
         {
+            image.FileId = fileId.Value;
             image.AccessCount++;
             image.LastAccessedAt = now;
+            if (image.GalleryId != galleryId &&
+                !await db.GalleryImages.AnyAsync(l => l.GalleryId == galleryId && l.ImageId == image.Id, ct))
+                db.GalleryImages.Add(new GalleryImage { GalleryId = galleryId, ImageId = image.Id });
         }
         await db.SaveChangesAsync(ct);
+    }
+
+    // An entry the sync made in this gallery for a file of this name, without a Meural id yet.
+    private static async Task<Image?> FromSyncAsync(MeuralDb db, int galleryId, string fileName, CancellationToken ct)
+    {
+        var linked = db.GalleryImages.Where(l => l.GalleryId == galleryId).Select(l => l.ImageId);
+        var candidates = await db.Images
+            .Where(i => i.FileId == 0 && (i.GalleryId == galleryId || linked.Contains(i.Id)))
+            .ToListAsync(ct);
+        return candidates.FirstOrDefault(i => FileNaming.FileName(i.Name, 0) == fileName);
     }
 
     // Downloads the image unless its file is there already. Goes to a temporary file first, so a
