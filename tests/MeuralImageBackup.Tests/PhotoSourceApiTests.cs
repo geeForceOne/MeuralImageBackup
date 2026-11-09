@@ -69,7 +69,7 @@ public partial class ApiTests
         await ShowAsync("Seascapes", 9001, "Wave");
         await ShowAsync("Seascapes", 9002, "Harbor at Dawn");
         await ShowAsync("Portraits", 9003, "Girl");
-        // Shown from a second gallery as well: still one asset.
+        // Shown from a second gallery as well: an image there too, so a second asset.
         await ShowAsync("Portraits", 9001, "Wave");
         var client = await ClientWithTokenAsync();
 
@@ -100,9 +100,9 @@ public partial class ApiTests
         Assert.Equal("Wave.jpeg", second.GetProperty("items")[0].GetProperty("originalFileName").GetString());
         Assert.Equal(JsonValueKind.Null, second.GetProperty("nextPage").ValueKind);
 
-        // An image in two galleries is one asset.
+        // The same Meural file in two galleries is two images, so two assets.
         var all = await SearchAsync(client, "metadata", new { type = "IMAGE", size = 1000 });
-        Assert.Single(all.GetProperty("items").EnumerateArray(), a => a.GetProperty("originalFileName").GetString() == "Wave.jpeg");
+        Assert.Equal(2, all.GetProperty("items").EnumerateArray().Count(a => a.GetProperty("originalFileName").GetString() == "Wave.jpeg"));
 
         // Smart search is a text search on names, image and gallery.
         var byName = await SearchAsync(client, "smart", new { query = "harbor dawn", size = 100 });

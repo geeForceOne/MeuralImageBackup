@@ -10,10 +10,6 @@
         {
             <span class="tile-placeholder"><Icon Name="file-missing" Size="26" /><span>File missing</span></span>
         }
-        @if (Image.StoredInGalleryName is { } storedIn)
-        {
-            <span class="tile-badge tile-badge-left" title="@($"Stored once, in {storedIn}")"><Icon Name="copies" Size="12" /></span>
-        }
         @if (Image.AccessCount > 1)
         {
             <span class="tile-badge" title="@($"Shown {Image.AccessCount} times")"><Icon Name="eye" Size="12" />@Format.Number(Image.AccessCount)</span>
@@ -38,5 +34,5 @@
     [Parameter] public bool ShowGallery { get; set; }
 
     // Versioned by the file's time, so browsers keep thumbnails until the file changes.
-    public static string ThumbUrl(ImageView image) => $"thumbs/{image.Id}?g={image.GalleryId}&v={image.Version:x}";
+    public static string ThumbUrl(ImageView image) => $"thumbs/{image.Id}?v={image.Version:x}";
 }

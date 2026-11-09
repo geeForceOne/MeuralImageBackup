@@ -22,7 +22,7 @@
             {
                 <span class="busy-status" role="status" aria-live="polite">
                     <BrandMark Size="22" Busy="true" />
-                    <span class="busy-text"><strong>Syncing with disk…</strong><span class="busy-detail">@_syncStatus</span></span>
+                    <span class="busy-text"><strong>@_syncTitle</strong><span class="busy-detail">@_syncStatus</span></span>
                 </span>
                 <button type="button" class="btn btn-secondary" disabled="@_sync.IsCancellationRequested" @onclick="() => _sync.Cancel()">
                     <Icon Name="x" Size="16" />@(_sync.IsCancellationRequested ? "Stopping…" : "Cancel")
@@ -62,13 +62,23 @@ else
         {
             <a class="stat stat-warn" href="images?missing=true"><span class="stat-value num">@Format.Number(_missing)</span><span class="stat-label">Files missing</span></a>
         }
-        @if (_library.Duplicates.Count > 0)
-        {
-            <a class="stat" href="duplicates" title="@($"Extra copies take {Format.Size(_library.Duplicates.Sum(d => d.Wasted))}")">
-                <span class="stat-value num">@Format.Number(_library.Duplicates.Count)</span><span class="stat-label">Stored more than once</span>
-            </a>
-        }
     </div>
+
+    @if (_library.Legacy is { } legacy)
+    {
+        <div class="notice notice-warn notice-row">
+            <Icon Name="copies" />
+            <span>
+                @($"{Format.Count(legacy.Images, "image is", "images are")} listed in more than one gallery, from versions 2.1.0 to 2.4.1. Now an image belongs to one gallery only. ")
+                @(legacy.Files > 0
+                    ? $"Cleaning up keeps each image in the gallery it was first shown in and deletes {Format.Count(legacy.Files, "extra copy", "extra copies")} ({Format.Size(legacy.Bytes)})."
+                    : "Cleaning up keeps each image in the gallery it was first shown in; no file needs deleting.")
+            </span>
+            <button type="button" class="btn btn-primary btn-sm" disabled="@Busy" @onclick="CleanUpLegacyAsync">
+                <Icon Name="broom" Size="16" />Clean up
+            </button>
+        </div>
+    }
 
     <div class="filters">
         <label class="filter-search">
@@ -214,6 +224,7 @@ else
     private int _missing;
     private string _view = "grid";
     private CancellationTokenSource? _sync;
+    private string _syncTitle = "";
     private string _syncStatus = "";
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
@@ -287,11 +298,53 @@ else
     // to then stays.
     private async Task SyncAsync()
     {
-        SyncResult? result = null;
-        bool ok;
-        using (var sync = CancellationTokenSource.CreateLinkedTokenSource(PageToken))
+        var result = await RunLongAsync("Syncing with disk…", (progress, ct) => LibraryService.SyncWithDiskAsync(progress, ct),
+            "Sync stopped. What it had added so far stays.");
+        if (result is null)
+            return;
+        if (result.Changed)
         {
-            _sync = sync;
+            var parts = new List<string>();
+            if (result.GalleriesAdded > 0) parts.Add($"{Format.Count(result.GalleriesAdded, "gallery", "galleries")} added");
+            if (result.ImagesAdded > 0) parts.Add($"{Format.Count(result.ImagesAdded, "image", "images")} added");
+            Ui.Toast.Success("Synced: " + string.Join(", ", parts) + ".");
+        }
+        else
+        {
+            Ui.Toast.Success("Everything on disk is listed already.");
+        }
+        if (result.Skipped > 0)
+            Ui.Toast.Info($"{Format.Count(result.Skipped, "file outside a gallery folder was", "files outside a gallery folder were")} skipped. Loose files lists them.");
+    }
+
+    // The one-time cleanup of images listed in several galleries (2.1.0 to 2.4.1).
+    private async Task CleanUpLegacyAsync()
+    {
+        if (_library?.Legacy is not { } legacy) return;
+        var ok = await Ui.Confirm.AskAsync(
+            $"Clean up {Format.Count(legacy.Images, "image", "images")}?",
+            (legacy.Files > 0
+                ? $"This deletes {Format.Count(legacy.Files, "extra copy", "extra copies")} ({Format.Size(legacy.Bytes)}) from the other galleries' folders, and those galleries no longer list the images. "
+                : "The other galleries no longer list the images; no file is deleted. ") +
+            "Each image stays in the gallery it was first shown in, or, when that folder lacks its file, moves to the first other gallery that has it. A file another image uses is never deleted. It can't be undone.",
+            "Clean up", danger: legacy.Files > 0);
+        if (!ok) return;
+        var result = await RunLongAsync("Cleaning up…", (progress, ct) => LibraryService.CleanUpLegacyAsync(progress, ct),
+            "Stopped. The images cleaned up until then are done; the rest are as they were.");
+        if (result is not null)
+            Ui.Toast.Success($"Cleaned up {Format.Count(result.Images, "image", "images")}, deleted {Format.Count(result.FilesDeleted, "extra copy", "extra copies")} ({Format.Size(result.BytesFreed)}).");
+    }
+
+    // Runs a long action with its progress in the page head and a Cancel button, then reloads.
+    // Returns its result, or null when it failed or was stopped.
+    private async Task<T?> RunLongAsync<T>(string title, Func<IProgress<string>, CancellationToken, Task<T>> work, string stoppedMessage) where T : class
+    {
+        T? result = null;
+        bool ok;
+        using (var run = CancellationTokenSource.CreateLinkedTokenSource(PageToken))
+        {
+            _sync = run;
+            _syncTitle = title;
             _syncStatus = "Starting";
             // Progress<T> reports on the circuit's context; redraw at most a few times a second.
             var sinceRender = System.Diagnostics.Stopwatch.StartNew();
@@ -304,41 +357,18 @@ else
             });
             try
             {
-                ok = await RunAsync(async () => result = await LibraryService.SyncWithDiskAsync(progress, sync.Token));
+                ok = await RunAsync(async () => result = await work(progress, run.Token));
             }
             finally
             {
                 _sync = null;
             }
-            if (!ok && sync.IsCancellationRequested && !PageToken.IsCancellationRequested)
-            {
-                Ui.Toast.Info("Sync stopped. What it had added so far stays.");
-                await LoadAsync();
-                return;
-            }
+            if (!ok && run.IsCancellationRequested && !PageToken.IsCancellationRequested)
+                Ui.Toast.Info(stoppedMessage);
         }
-        if (!ok || result is null)
-            return;
-        if (result.Changed)
-        {
-            var parts = new List<string>();
-            if (result.GalleriesAdded > 0) parts.Add($"{Format.Count(result.GalleriesAdded, "gallery", "galleries")} added");
-            if (result.ImagesAdded > 0) parts.Add($"{Format.Count(result.ImagesAdded, "image", "images")} added");
-            if (result.ImagesLinked > 0) parts.Add($"{Format.Count(result.ImagesLinked, "image", "images")} now also listed in a second gallery");
-            Ui.Toast.Success("Synced: " + string.Join(", ", parts) + ".");
-        }
-        else
-        {
-            Ui.Toast.Success("Everything on disk is listed already.");
-        }
-        if (result.Skipped > 0)
-        {
-            var reasons = new List<string>();
-            if (result.OutsideGallery > 0) reasons.Add($"{Format.Number(result.OutsideGallery)} outside a gallery folder");
-            if (result.SharedName > 0) reasons.Add($"{Format.Number(result.SharedName)} with a name several images share");
-            Ui.Toast.Info($"{Format.Count(result.Skipped, "file was", "files were")} skipped: {string.Join(", ", reasons)}. Loose files lists them.");
-        }
-        await LoadAsync();
+        if (!PageToken.IsCancellationRequested)
+            await LoadAsync();
+        return ok ? result : null;
     }
 
     private async Task DeleteShownAsync()

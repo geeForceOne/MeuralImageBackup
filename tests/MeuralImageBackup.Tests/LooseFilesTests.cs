@@ -21,12 +21,13 @@ public class LooseFilesTests
         storage.WriteUpload("stray.jpeg");
         storage.WriteUpload("Hall/in-frame-folder.jpeg");
         storage.WriteUpload("Hall/Flowers/old/deep.jpeg");
-        storage.WriteUpload("Kitchen/Herbs/Rose.jpeg");
         storage.WriteUpload("Hall/Flowers/Rose.jpeg.part");
         storage.WriteUpload("Hall/Flowers/notes.txt");
         storage.WriteUpload("Hall/Flowers/empty.jpeg", "");
-        // A file a sync would add as a new image: not loose.
+        // Files a sync would add as new images: not loose. Rose in another gallery's folder is an
+        // image of that gallery, even with a name images on two frames share.
         storage.WriteUpload("Hall/Flowers/Tulip.jpeg");
+        storage.WriteUpload("Kitchen/Herbs/Rose.jpeg");
         return (db, Library(storage, db));
     }
 
@@ -43,13 +44,11 @@ public class LooseFilesTests
                 ("Hall/Flowers/old/deep.jpeg", LooseReason.OutsideGallery),
                 ("Hall/in-frame-folder.jpeg", LooseReason.OutsideGallery),
                 ("stray.jpeg", LooseReason.OutsideGallery),
-                ("Kitchen/Herbs/Rose.jpeg", LooseReason.SharedName),
                 ("Hall/Flowers/empty.jpeg", LooseReason.NotAnImage),
                 ("Hall/Flowers/notes.txt", LooseReason.NotAnImage),
                 ("Hall/Flowers/Rose.jpeg.part", LooseReason.NotAnImage),
             ],
             loose.Select(f => (f.RelativePath, f.Reason)));
-        Assert.Equal(["Rose (Flowers, Hall)", "Rose (Garden, Office)"], loose.Single(f => f.Reason == LooseReason.SharedName).Candidates.Order());
 
         // Listing writes nothing: the would-be gallery and image aren't added.
         await using var ctx = db.CreateDbContext();
@@ -58,16 +57,16 @@ public class LooseFilesTests
     }
 
     [Fact]
-    public async Task TheSyncCountsWhatItSkippedByReason()
+    public async Task TheSyncCountsWhatItSkipped()
     {
         using var storage = new TestStorage();
         var (_, library) = await SetupAsync(storage);
 
         var result = await library.SyncWithDiskAsync();
 
-        Assert.Equal((4, 3, 1), (result.Skipped, result.OutsideGallery, result.SharedName));
+        Assert.Equal(new SyncResult(1, 2, 3), result);
         // The sync and the list agree afterwards too.
-        Assert.Equal(4, (await library.FindLooseFilesAsync()).Count(f => f.IsImage));
+        Assert.Equal(3, (await library.FindLooseFilesAsync()).Count(f => f.IsImage));
     }
 
     [Fact]
@@ -78,13 +77,13 @@ public class LooseFilesTests
 
         var (files, _) = await library.DeleteLooseFilesAsync(["Hall/Flowers/old/deep.jpeg", "Kitchen/Herbs/Rose.jpeg", "Hall/Flowers/Rose.jpeg", "Hall/Flowers/Tulip.jpeg", "../outside.jpeg"]);
 
-        Assert.Equal(2, files);
+        Assert.Equal(1, files);
         Assert.False(File.Exists(storage.Upload("Hall/Flowers/old/deep.jpeg")));
         Assert.False(Directory.Exists(storage.Upload("Hall/Flowers/old")));
-        Assert.False(Directory.Exists(storage.Upload("Kitchen")));
-        // An image's file, and a file the sync would add, stay.
+        // An image's file, and files the sync would add, stay.
         Assert.True(File.Exists(storage.Upload("Hall/Flowers/Rose.jpeg")));
         Assert.True(File.Exists(storage.Upload("Hall/Flowers/Tulip.jpeg")));
+        Assert.True(File.Exists(storage.Upload("Kitchen/Herbs/Rose.jpeg")));
         Assert.True(Directory.Exists(storage.Paths.UploadsPath));
     }
 

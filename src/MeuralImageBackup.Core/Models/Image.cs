@@ -1,7 +1,7 @@
 namespace MeuralImageBackup.Core.Models;
 
-// An image shown on a frame, once per Meural file id. It belongs to the gallery it was first seen in
-// (GalleryId); other galleries that show it later are linked through GalleryImage. Times are UTC.
+// An image shown on a frame, once per Meural file id and gallery: the same file shown in another
+// gallery is another image there, with its own file in that gallery's folder. Times are UTC.
 // The shape is MeuralImageUploader's table "Images"; see the migrations.
 public class Image
 {

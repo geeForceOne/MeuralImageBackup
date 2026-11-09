@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace MeuralImageBackup.Tests;
 
-// An image in several galleries, and the sync of the database with the uploads folder.
+// The sync of the database with the uploads folder: a file belongs to the gallery whose folder it's in.
 public class SyncTests
 {
     private static async Task<int> AddGalleryAsync(DbFactory db, string frame, string name, params (int FileId, string Title)[] images)
@@ -42,11 +42,12 @@ public class SyncTests
 
         var result = await library.SyncWithDiskAsync();
 
-        Assert.Equal(new SyncResult(0, 0, 1, 0), result);
+        Assert.Equal(new SyncResult(0, 1, 0), result);
         var loaded = await library.LoadAsync();
         var renamed = loaded.Galleries.Single(g => g.Name == "People [X]");
         var portrait = Assert.Single(renamed.Images);
-        Assert.Equal(("Portrait", true, 4), (portrait.Name, portrait.Exists, portrait.Size));
+        // Its own image, with the Meural id of the one in People (same file name).
+        Assert.Equal(("Portrait", true, 4, 1), (portrait.Name, portrait.Exists, portrait.Size, portrait.FileId));
         Assert.Equal(2, loaded.Galleries.Single(g => g.Name == "People").Images.Count);
         Assert.Equal(3, loaded.Images.Select(i => i.Key).Distinct().Count());
 
@@ -68,8 +69,8 @@ public class SyncTests
 
         var result = await library.SyncWithDiskAsync();
 
-        // Pic [1] in the second frame's folder is the same file name, so the same image, linked.
-        Assert.Equal(new SyncResult(2, 2, 1, 1, OutsideGallery: 1), result);
+        // Pic [1] in the second frame's folder is an image of that frame's gallery.
+        Assert.Equal(new SyncResult(2, 3, 1), result);
         await using var ctx = db.CreateDbContext();
         Assert.Equal(1234, (await ctx.Images.SingleAsync(i => i.Name == "1234")).FileId);
         var loaded = await library.LoadAsync();
@@ -85,26 +86,28 @@ public class SyncTests
         storage.WriteUpload("Found/a.jpeg");
         var library = Library(storage, db, useFrameFolder: false);
 
-        Assert.Equal(new SyncResult(1, 1, 0, 0), await library.SyncWithDiskAsync());
+        Assert.Equal(new SyncResult(1, 1, 0), await library.SyncWithDiskAsync());
         var gallery = Assert.Single((await library.LoadAsync()).Galleries);
         Assert.Equal(("Unknown", "Found", true), (gallery.FrameName, gallery.Name, gallery.Images.Single().Exists));
     }
 
     [Fact]
-    public async Task AFileMatchingImagesOnOtherFramesIsSkipped()
+    public async Task AFileNamedLikeImagesWithDifferentIdsIsAddedWithoutAnId()
     {
         using var storage = new TestStorage();
         var db = await storage.MigratedDbAsync();
         await AddGalleryAsync(db, "One", "G", (1, "Same"));
         await AddGalleryAsync(db, "Two", "G", (2, "Same"));
-        await AddGalleryAsync(db, "Three", "G");
+        var three = await AddGalleryAsync(db, "Three", "G");
         storage.WriteUpload("Three/G/Same.jpeg");
 
-        Assert.Equal(new SyncResult(0, 0, 0, 1), await Library(storage, db).SyncWithDiskAsync());
+        Assert.Equal(new SyncResult(0, 1, 0), await Library(storage, db).SyncWithDiskAsync());
+        await using var ctx = db.CreateDbContext();
+        Assert.Equal(0, (await ctx.Images.SingleAsync(i => i.GalleryId == three)).FileId);
     }
 
     [Fact]
-    public async Task AnImageShownFromAnotherGalleryIsListedInBoth()
+    public async Task AnImageShownFromAnotherGalleryIsAnImageInEach()
     {
         using var storage = new TestStorage();
         var db = await storage.MigratedDbAsync();
@@ -116,9 +119,9 @@ public class SyncTests
 
         var loaded = await Library(storage, db).LoadAsync();
         Assert.All(loaded.Galleries, g => Assert.True(Assert.Single(g.Images).Exists));
+        Assert.Equal([("People", 1), ("People [X]", 2)], loaded.Images.Select(i => (i.GalleryName, i.AccessCount)).Order());
         await using var ctx = db.CreateDbContext();
-        Assert.Equal(3, (await ctx.Images.SingleAsync()).AccessCount);
-        Assert.Equal(1, await ctx.GalleryImages.CountAsync());
+        Assert.Equal(0, await ctx.GalleryImages.CountAsync());
     }
 
     [Fact]
@@ -171,7 +174,7 @@ public class SyncTests
         await library.SyncWithDiskAsync();
         var original = (await library.LoadAsync()).Images.Single(i => i.GalleryName == "People");
 
-        await library.DeleteImageAsync(original.Id, original.GalleryId);
+        await library.DeleteImageAsync(original.Id);
 
         Assert.False(File.Exists(storage.Upload("gArt/People/Portrait.jpeg")));
         var left = Assert.Single((await library.LoadAsync()).Images);
@@ -179,7 +182,7 @@ public class SyncTests
     }
 
     [Fact]
-    public async Task AnImageIsMissingOnlyWhenNoGalleryHasItsFile()
+    public async Task EachGalleryNeedsItsOwnFile()
     {
         using var storage = new TestStorage();
         var db = await storage.MigratedDbAsync();
@@ -190,16 +193,12 @@ public class SyncTests
         var library = Library(storage, db);
         await library.SyncWithDiskAsync();
 
-        // One copy gone: that gallery shows the other one, nothing is missing.
+        // People's file gone: that image is missing, the other one isn't.
         File.Delete(storage.Upload("gArt/People/Portrait.jpeg"));
-        Assert.Equal(0, await library.RemoveMissingAsync());
-        var views = (await library.LoadAsync()).Images;
-        Assert.Equal(2, views.Count);
-        Assert.All(views, v => Assert.Equal("gArt/People [X]/Portrait.jpeg", v.RelativePath));
-
-        // Both gone: both entries go.
-        File.Delete(storage.Upload("gArt/People [X]/Portrait.jpeg"));
-        Assert.Equal(2, await library.RemoveMissingAsync());
-        Assert.Empty((await library.LoadAsync()).Images);
+        var missing = Assert.Single((await library.LoadAsync()).Images, v => !v.Exists);
+        Assert.Equal("People", missing.GalleryName);
+        Assert.Equal(1, await library.RemoveMissingAsync());
+        var left = Assert.Single((await library.LoadAsync()).Images);
+        Assert.Equal("gArt/People [X]/Portrait.jpeg", left.RelativePath);
     }
 }

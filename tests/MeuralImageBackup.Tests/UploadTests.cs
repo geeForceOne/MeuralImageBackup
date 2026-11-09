@@ -55,7 +55,7 @@ public class UploadTests
     }
 
     [Fact]
-    public async Task AnImageIsOneEntryPerFileIdAndCountsEveryReport()
+    public async Task AnImageIsOneEntryPerFileIdAndGalleryAndCountsEveryReport()
     {
         using var storage = new TestStorage();
         var db = await storage.MigratedDbAsync();
@@ -67,12 +67,12 @@ public class UploadTests
         await service.HandleAsync(Shown("B", 1));
 
         await using var ctx = db.CreateDbContext();
-        var image = await ctx.Images.Include(i => i.Gallery).SingleAsync();
-        Assert.Equal(3, image.AccessCount);
-        Assert.Equal("A", image.Gallery!.Name);
-        // Downloaded once, into A: B lists it and shows A's copy (each image is stored once).
-        Assert.Equal(1, server.Requests);
-        Assert.False(File.Exists(storage.Upload("Living room/B/Image 1.jpeg")));
+        var images = await ctx.Images.Include(i => i.Gallery).OrderBy(i => i.Gallery!.Name).ToListAsync();
+        Assert.Equal([("A", 2), ("B", 1)], images.Select(i => (i.Gallery!.Name, i.AccessCount)));
+        // Saved into each gallery's folder, as MeuralImageUploader did.
+        Assert.Equal(2, server.Requests);
+        Assert.True(File.Exists(storage.Upload("Living room/A/Image 1.jpeg")));
+        Assert.True(File.Exists(storage.Upload("Living room/B/Image 1.jpeg")));
     }
 
     [Fact]

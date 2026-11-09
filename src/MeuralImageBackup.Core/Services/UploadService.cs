@@ -12,9 +12,9 @@ public sealed record MeuralUpload(string? FrameName, string? Title, string? Gall
 // Records a shown image and keeps a copy of it: MeuralImageUploader's /api/meural, with the same
 // counting and file layout. Uploads are handled one at a time, so two frames reporting at once
 // can't count a gallery twice.
-// Each image is stored once (since 2.3.1; before, optional): when a frame shows an image from
-// another gallery and its file is in one of its galleries' folders already, it isn't downloaded
-// again; the new gallery lists it and shows the stored copy.
+// An image belongs to the gallery it's shown in: shown in another gallery, the same Meural file is
+// recorded there as another image and saved in that gallery's folder too (as MeuralImageUploader
+// saved it; since 2.5.0 the entry is kept per gallery as well).
 public sealed class UploadService(IDbContextFactory<MeuralDb> dbFactory, ImagePaths paths, HttpClient http, ILogger<UploadService> logger)
 {
 
@@ -69,10 +69,10 @@ public sealed class UploadService(IDbContextFactory<MeuralDb> dbFactory, ImagePa
         return gallery.Id;
     }
 
-    // An image is one row per Meural file id, wherever it's shown later; without an id nothing is recorded.
-    // Shown from another gallery than its own, it's linked to that gallery too (its file is saved there
-    // as well). An entry the sync made from a file without knowing the id (FileId 0) gets the id when
-    // the frame shows that image in that gallery.
+    // One image per Meural file id and gallery; without an id nothing is recorded. An entry the sync
+    // made from a file without knowing the id (FileId 0) gets the id when the frame shows that image
+    // in that gallery. An image listed in this gallery through a legacy link (2.1.0 to 2.4.1, see
+    // LegacyCleanup) is counted there, so no second entry appears before the cleanup.
     internal async Task RegisterImageAsync(int galleryId, int? fileId, string? name, CancellationToken ct)
     {
         if (fileId is null)
@@ -81,7 +81,9 @@ public sealed class UploadService(IDbContextFactory<MeuralDb> dbFactory, ImagePa
         var now = DateTime.UtcNow;
 
         await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var image = await db.Images.FirstOrDefaultAsync(i => i.FileId == fileId, ct)
+        var linked = db.GalleryImages.Where(l => l.GalleryId == galleryId).Select(l => l.ImageId);
+        var image = await db.Images.Where(i => i.FileId == fileId && (i.GalleryId == galleryId || linked.Contains(i.Id)))
+                .OrderBy(i => i.GalleryId == galleryId ? 0 : 1).ThenBy(i => i.Id).FirstOrDefaultAsync(ct)
             ?? await FromSyncAsync(db, galleryId, FileNaming.FileName(name, fileId), ct);
         if (image is null)
         {
@@ -92,9 +94,6 @@ public sealed class UploadService(IDbContextFactory<MeuralDb> dbFactory, ImagePa
             image.FileId = fileId.Value;
             image.AccessCount++;
             image.LastAccessedAt = now;
-            if (image.GalleryId != galleryId &&
-                !await db.GalleryImages.AnyAsync(l => l.GalleryId == galleryId && l.ImageId == image.Id, ct))
-                db.GalleryImages.Add(new GalleryImage { GalleryId = galleryId, ImageId = image.Id });
         }
         await db.SaveChangesAsync(ct);
     }
@@ -102,29 +101,8 @@ public sealed class UploadService(IDbContextFactory<MeuralDb> dbFactory, ImagePa
     // An entry the sync made in this gallery for a file of this name, without a Meural id yet.
     private static async Task<Image?> FromSyncAsync(MeuralDb db, int galleryId, string fileName, CancellationToken ct)
     {
-        var linked = db.GalleryImages.Where(l => l.GalleryId == galleryId).Select(l => l.ImageId);
-        var candidates = await db.Images
-            .Where(i => i.FileId == 0 && (i.GalleryId == galleryId || linked.Contains(i.Id)))
-            .ToListAsync(ct);
+        var candidates = await db.Images.Where(i => i.FileId == 0 && i.GalleryId == galleryId).ToListAsync(ct);
         return candidates.FirstOrDefault(i => FileNaming.FileName(i.Name, 0) == fileName);
-    }
-
-    // Where the recorded image with this Meural id has a file, in any of its galleries' folders; null
-    // when it has none.
-    private async Task<string?> StoredCopyAsync(int fileId, CancellationToken ct)
-    {
-        await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var image = await db.Images.AsNoTracking().FirstOrDefaultAsync(i => i.FileId == fileId, ct);
-        if (image is null)
-            return null;
-        var linked = db.GalleryImages.Where(l => l.ImageId == image.Id).Select(l => l.GalleryId);
-        var galleries = await db.Galleries.AsNoTracking()
-            .Where(g => g.Id == image.GalleryId || linked.Contains(g.Id))
-            .Select(g => new { g.FrameName, g.Name })
-            .ToListAsync(ct);
-        return galleries
-            .Select(g => paths.File(g.FrameName, g.Name, image.Name, image.FileId))
-            .FirstOrDefault(r => paths.FullPath(r) is { } full && File.Exists(full));
     }
 
     // Downloads the image unless its file is there already. Goes to a temporary file first, so a
@@ -140,12 +118,6 @@ public sealed class UploadService(IDbContextFactory<MeuralDb> dbFactory, ImagePa
         }
         if (File.Exists(path))
             return;
-        if (upload.FrameName is not null && upload.Id is { } fileId &&
-            await StoredCopyAsync(fileId, ct) is { } stored)
-        {
-            logger.LogInformation("Not saving {File}: the image is stored as {Stored} already", relative, stored);
-            return;
-        }
         if (!Uri.TryCreate(upload.Url, UriKind.Absolute, out var url) || url.Scheme is not ("http" or "https"))
         {
             logger.LogWarning("Not saving {File}: no usable image URL ({Url})", relative, upload.Url);
