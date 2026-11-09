@@ -242,6 +242,84 @@ public sealed class LibraryService(IDbContextFactory<MeuralDb> dbFactory, ImageP
         return (files, bytes);
     }
 
+    // Merges an image whose file is identical to another's into that one: its files are deleted, the
+    // galleries it was in list the kept image instead (showing the kept image's copy), and its show
+    // counts are added to the kept image's. Its entry goes; if a frame shows it again, it's recorded
+    // and downloaded anew. Returns how many files were deleted and their size.
+    public async Task<(int Files, long Bytes)> MergeIntoAsync(int keepId, int removeId, CancellationToken ct = default)
+    {
+        if (keepId == removeId)
+            throw new InvalidOperationException("An image can't be merged into itself.");
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var keep = await db.Images.FirstOrDefaultAsync(i => i.Id == keepId, ct)
+            ?? throw new NotFoundException("The image to keep was deleted meanwhile.");
+        var remove = await db.Images.FirstOrDefaultAsync(i => i.Id == removeId, ct)
+            ?? throw new NotFoundException("This image was merged or deleted already.");
+
+        var keepGalleries = await GalleriesOfAsync(db, keep, ct);
+        var keepFiles = keepGalleries.Select(g => paths.File(g.FrameName, g.Name, keep.Name, keep.FileId)).ToHashSet(StringComparer.Ordinal);
+        if (!keepFiles.Any(f => paths.FullPath(f) is { } full && File.Exists(full)))
+            throw new InvalidOperationException($"The file of {keep.Name} isn't there any more, so nothing was merged.");
+
+        var files = 0;
+        var bytes = 0L;
+        var keepIds = keepGalleries.Select(g => g.Id).ToHashSet();
+        foreach (var g in await GalleriesOfAsync(db, remove, ct))
+        {
+            var relative = paths.File(g.FrameName, g.Name, remove.Name, remove.FileId);
+            // The same path is the kept image's file too (same name in the same folder).
+            if (!keepFiles.Contains(relative) && paths.FullPath(relative) is { } full && File.Exists(full))
+            {
+                var size = new FileInfo(full).Length;
+                if (DeleteQuietly(() => File.Delete(full), relative))
+                {
+                    files++;
+                    bytes += size;
+                }
+            }
+            if (keepIds.Add(g.Id))
+                db.GalleryImages.Add(new GalleryImage { GalleryId = g.Id, ImageId = keep.Id });
+        }
+
+        keep.AccessCount += remove.AccessCount;
+        if (remove.LastAccessedAt > keep.LastAccessedAt) keep.LastAccessedAt = remove.LastAccessedAt;
+        if (remove.CreatedAt < keep.CreatedAt) keep.CreatedAt = remove.CreatedAt;
+        await db.GalleryImages.Where(l => l.ImageId == remove.Id).ExecuteDeleteAsync(ct);
+        db.Images.Remove(remove);
+        await db.SaveChangesAsync(ct);
+        logger.LogInformation("Merged {Removed} (Meural id {RemovedId}) into {Kept} (Meural id {KeptId}): identical files, {Count} deleted",
+            remove.Name, remove.FileId, keep.Name, keep.FileId, files);
+        return (files, bytes);
+    }
+
+    // Merges every group of identical files into its first image (the most shown).
+    public async Task<DedupeResult> MergeIdenticalAsync(IReadOnlyList<IdenticalFiles> groups, IProgress<string>? progress = null, CancellationToken ct = default)
+    {
+        int images = 0, files = 0;
+        var bytes = 0L;
+        for (var n = 0; n < groups.Count; n++)
+        {
+            ct.ThrowIfCancellationRequested();
+            var group = groups[n];
+            progress?.Report($"{n + 1:N0} of {groups.Count:N0}: {group.Keeper.Name}");
+            foreach (var other in group.Images.Skip(1))
+            {
+                try
+                {
+                    var (f, b) = await MergeIntoAsync(group.Keeper.Id, other.Id, ct);
+                    images++;
+                    files += f;
+                    bytes += b;
+                }
+                catch (Exception ex) when (ex is NotFoundException or InvalidOperationException)
+                {
+                    logger.LogInformation("Didn't merge {Image}: {Reason}", other.Name, ex.Message);
+                }
+            }
+        }
+        return new DedupeResult(images, files, bytes);
+    }
+
     // Keeps one copy of each duplicate: the one in the image's own gallery (where it was first shown)
     // when that folder has it, else the first gallery's.
     public async Task<DedupeResult> KeepOneCopyOfEachAsync(IReadOnlyList<Duplicate> duplicates, IProgress<string>? progress = null, CancellationToken ct = default)

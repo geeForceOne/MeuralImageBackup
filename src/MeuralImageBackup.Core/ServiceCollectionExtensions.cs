@@ -16,6 +16,7 @@ public static class ServiceCollectionExtensions
         services.AddDbContextFactory<MeuralDb>(o => o.UseSqlite(storage.ConnectionString));
         services.AddSingleton<LibraryService>();
         services.AddSingleton<ThumbnailService>();
+        services.AddSingleton<IdenticalFilesService>();
         services.AddSingleton<SettingsService>();
         services.AddSingleton<ApiTokenService>();
 

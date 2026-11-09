@@ -182,6 +182,98 @@ public class DuplicateTests
     public void SkipDuplicateDownloadsIsOffUnlessTrue(string? value, bool expected) =>
         Assert.Equal(expected, UploadOptions.ParseSkipStoredImages(value));
 
+    private static IdenticalFilesService Identical(TestStorage storage) => new(storage.ImagePaths());
+
+    [Fact]
+    public async Task DifferentImagesWithTheSameFileAreFound()
+    {
+        using var storage = new TestStorage();
+        // Image 1 in A, B and C (shown 3 times), image 2 in A: every fake download has the same bytes.
+        var (_, library) = await ThreeCopiesAsync(storage);
+
+        var groups = await Identical(storage).FindAsync(await library.LoadAsync());
+
+        var group = Assert.Single(groups);
+        Assert.Equal(["Image 1", "Image 2"], group.Images.Select(i => i.Name));
+        Assert.Equal("Image 1", group.Keeper.Name);
+        Assert.Equal(3, group.Keeper.Copies.Count);
+        Assert.Equal("jpeg-bytes".Length, group.Wasted);
+    }
+
+    [Fact]
+    public async Task OneImageInSeveralGalleriesOrFilesThatDifferAreNotIdenticalFiles()
+    {
+        using var storage = new TestStorage();
+        var db = await storage.MigratedDbAsync();
+        var uploads = Uploads(storage, db, new FakeImageServer());
+        await uploads.HandleAsync(Shown("A", 1));
+        await uploads.HandleAsync(Shown("B", 1));
+        await uploads.HandleAsync(Shown("A", 2));
+        // Same size, other bytes.
+        File.WriteAllText(storage.Upload("Living room/A/Image 2.jpeg"), "JPEG-BYTES");
+
+        Assert.Empty(await Identical(storage).FindAsync(await Library(storage, db).LoadAsync()));
+    }
+
+    [Fact]
+    public async Task MergingMovesTheGalleriesAndCountsToTheKeptImage()
+    {
+        using var storage = new TestStorage();
+        var db = await storage.MigratedDbAsync();
+        var uploads = Uploads(storage, db, new FakeImageServer());
+        await uploads.HandleAsync(Shown("A", 1));
+        await uploads.HandleAsync(Shown("A", 1));
+        await uploads.HandleAsync(Shown("D", 2));
+        var library = Library(storage, db);
+        var group = Assert.Single(await Identical(storage).FindAsync(await library.LoadAsync()));
+
+        var (files, bytes) = await library.MergeIntoAsync(group.Keeper.Id, group.Images[1].Id);
+
+        Assert.Equal((1, (long)"jpeg-bytes".Length), (files, bytes));
+        Assert.False(File.Exists(storage.Upload("Living room/D/Image 2.jpeg")));
+        Assert.True(File.Exists(storage.Upload("Living room/A/Image 1.jpeg")));
+        var loaded = await library.LoadAsync();
+        Assert.DoesNotContain(loaded.Images, i => i.Name == "Image 2");
+        // D now lists image 1, showing A's copy, and the show counts add up.
+        var inD = loaded.Galleries.Single(g => g.Name == "D").Images.Single();
+        Assert.Equal(("Image 1", "A", 3), (inD.Name, inD.StoredInGalleryName, inD.AccessCount));
+        Assert.Empty(await Identical(storage).FindAsync(loaded));
+    }
+
+    [Fact]
+    public async Task MergingAllKeepsTheMostShownImageOfEachGroup()
+    {
+        using var storage = new TestStorage();
+        var (db, library) = await ThreeCopiesAsync(storage);
+        var groups = await Identical(storage).FindAsync(await library.LoadAsync());
+
+        var result = await library.MergeIdenticalAsync(groups);
+
+        Assert.Equal(new DedupeResult(1, 1, "jpeg-bytes".Length), result);
+        await using var ctx = db.CreateDbContext();
+        var image = await ctx.Images.SingleAsync();
+        Assert.Equal(("Image 1", 4), (image.Name, image.AccessCount));
+        Assert.False(File.Exists(storage.Upload("Living room/A/Image 2.jpeg")));
+    }
+
+    [Fact]
+    public async Task NothingIsMergedWhenTheKeptFileIsGone()
+    {
+        using var storage = new TestStorage();
+        var db = await storage.MigratedDbAsync();
+        var uploads = Uploads(storage, db, new FakeImageServer());
+        await uploads.HandleAsync(Shown("A", 1));
+        await uploads.HandleAsync(Shown("D", 2));
+        var library = Library(storage, db);
+        var group = Assert.Single(await Identical(storage).FindAsync(await library.LoadAsync()));
+        foreach (var copy in group.Keeper.Copies)
+            File.Delete(storage.Upload(copy.RelativePath));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => library.MergeIntoAsync(group.Keeper.Id, group.Images[1].Id));
+
+        Assert.True(File.Exists(storage.Upload(group.Images[1].Copies[0].RelativePath)));
+    }
+
     [Fact]
     public async Task SyncReportsProgress()
     {
