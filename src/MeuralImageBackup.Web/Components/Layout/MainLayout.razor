@@ -10,10 +10,14 @@
         <nav class="side-nav" aria-label="Main">
             <NavLink href="" Match="NavLinkMatch.All" ActiveClass="active"><Icon Name="frames" /><span>Galleries</span></NavLink>
             <NavLink href="images" ActiveClass="active"><Icon Name="image" /><span>Images</span></NavLink>
+            <NavLink href="duplicates" ActiveClass="active"><Icon Name="copies" /><span>Duplicates</span></NavLink>
         </nav>
 
         <div class="side-foot">
             <ThemePicker />
+            <NavLink class="side-version" href="settings" ActiveClass="active" title="Settings">
+                <Icon Name="settings" Size="16" /><span>Settings</span>
+            </NavLink>
             <a class="side-version" href="release-notes" title="Release notes">
                 <Icon Name="file" Size="16" /><span>Release notes</span><span class="menu-version">@AppInfo.Version</span>
             </a>
@@ -25,7 +29,10 @@
             <BrandMark Size="28" />
             <span class="brand-name"><span class="brand-title">Image Backup</span><span class="brand-caption">for Meural Canvas</span></span>
         </a>
-        <ThemePicker Compact="true" />
+        <div class="topbar-actions">
+            <ThemePicker Compact="true" />
+            <a class="btn btn-ghost btn-icon" href="settings" title="Settings" aria-label="Settings"><Icon Name="settings" /></a>
+        </div>
     </header>
 
     <main class="main">
@@ -36,6 +43,7 @@
     <nav class="tabbar" aria-label="Main">
         <NavLink href="" Match="NavLinkMatch.All" ActiveClass="active"><Icon Name="frames" Size="22" />Galleries</NavLink>
         <NavLink href="images" ActiveClass="active"><Icon Name="image" Size="22" />Images</NavLink>
+        <NavLink href="duplicates" ActiveClass="active"><Icon Name="copies" Size="22" />Duplicates</NavLink>
         <NavLink href="release-notes" ActiveClass="active"><Icon Name="file" Size="22" />What's new</NavLink>
     </nav>
 </div>

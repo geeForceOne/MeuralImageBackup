@@ -124,9 +124,7 @@ else
     private async Task DeleteImageAsync(ImageView image)
     {
         var ok = await Ui.Confirm.AskAsync(image.Exists ? $"Delete {image.Name}?" : $"Remove {image.Name}?",
-            image.Exists
-                ? "This deletes the image's file and its entry. If a frame shows it again, it's downloaded again."
-                : "Its file isn't there; this removes the entry. If a frame shows it again, it's downloaded again.",
+            ImageViewer.DeleteMessage(image),
             image.Exists ? "Delete" : "Remove", danger: true);
         if (!ok) return;
         var at = _viewing;

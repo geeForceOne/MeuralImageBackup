@@ -1,0 +1,295 @@
+@page "/duplicates"
+@inherits AppPage
+@inject UploadOptions UploadOptions
+
+<PageTitle>Duplicates · @AppInfo.Name</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1>Duplicates</h1>
+        @if (_library is { Duplicates.Count: > 0 } lib)
+        {
+            <p class="page-sub">
+                <span>@($"{Format.Count(lib.Duplicates.Count, "image is", "images are")} stored in more than one gallery")</span>
+                <span>@($"{Format.Size(lib.Duplicates.Sum(d => d.Wasted))} in extra copies")</span>
+            </p>
+        }
+    </div>
+    @if (_shown.Count > 0)
+    {
+        <div class="page-actions">
+            @if (_bulk is not null)
+            {
+                <span class="busy-status" role="status" aria-live="polite">
+                    <BrandMark Size="22" Busy="true" />
+                    <span class="busy-text"><strong>Removing extra copies…</strong><span class="busy-detail">@_bulkStatus</span></span>
+                </span>
+                <button type="button" class="btn btn-secondary" disabled="@_bulk.IsCancellationRequested" @onclick="() => _bulk.Cancel()">
+                    <Icon Name="x" Size="16" />@(_bulk.IsCancellationRequested ? "Stopping…" : "Cancel")
+                </button>
+            }
+            else
+            {
+                <button type="button" class="btn btn-primary" disabled="@Busy" @onclick="KeepOneOfEachAsync"
+                        title="Each image keeps the copy in the gallery it was first shown in">
+                    <Icon Name="broom" Size="16" />@(_shown.Count == _library!.Duplicates.Count ? "Keep one copy of each" : $"Keep one copy of these {Format.Number(_shown.Count)}")
+                </button>
+            }
+        </div>
+    }
+</div>
+
+@if (_library is null)
+{
+    <div class="page-loading"><BrandMark Size="40" Busy="true" /></div>
+}
+else if (_library.Duplicates.Count == 0)
+{
+    <div class="empty">
+        <BrandMark Size="64" PlayOnLoad="true" />
+        <h2>No duplicates</h2>
+        <p>Every image is stored in one gallery's folder only.</p>
+        @if (!UploadOptions.SkipStoredImages)
+        {
+            <p class="small">
+                When a frame shows an image from another gallery, it's saved into that gallery's folder too.
+                To store each image only once, set <code>SKIP_DUPLICATE_DOWNLOADS=true</code> on the container.
+            </p>
+        }
+    </div>
+}
+else
+{
+    <div class="notice notice-row">
+        <Icon Name="info" />
+        <span>
+            Removing a copy deletes only that file. The image stays listed in all its galleries, which show the copy that's left.
+            @if (!UploadOptions.SkipStoredImages)
+            {
+                <text> If a frame shows it again from one of those galleries, it's downloaded again, unless <code>SKIP_DUPLICATE_DOWNLOADS=true</code> is set.</text>
+            }
+        </span>
+    </div>
+
+    <div class="filters">
+        <label class="filter-search">
+            <Icon Name="search" />
+            <input data-bwignore="true" type="search" placeholder="Find an image or gallery" aria-label="Find an image or gallery"
+                   value="@Q" @oninput="e => Set(q: e.Value?.ToString())" />
+        </label>
+        @if (_library.Frames.Count > 1)
+        {
+            <label class="filter-select">
+                <span>Frame</span>
+                <select class="select" value="@(Frame ?? "")" @onchange="e => Set(frame: e.Value?.ToString())">
+                    <option value="">All frames</option>
+                    @foreach (var f in _library.Frames)
+                    {
+                        <option value="@f">@f</option>
+                    }
+                </select>
+            </label>
+        }
+    </div>
+
+    <p class="result-count muted small">
+        @(_shown.Count == _library.Duplicates.Count ? Format.Count(_shown.Count, "image", "images") : $"{Format.Number(_shown.Count)} of {Format.Count(_library.Duplicates.Count, "image", "images")}")
+    </p>
+
+    @if (_shown.Count == 0)
+    {
+        <div class="empty">
+            <Icon Name="search" Size="28" />
+            <p>No duplicate matches these filters.</p>
+            <button type="button" class="btn btn-secondary" @onclick="ClearFilters">Show all duplicates</button>
+        </div>
+    }
+    else
+    {
+        <div class="dupe-list">
+            @foreach (var d in _shown.Take(_limit))
+            {
+                var dupe = d;
+                var keeper = d.Keeper;
+                <article @key="d.Id" class="dupe">
+                    <button type="button" class="dupe-photo" title="View large" @onclick="() => Open(dupe)">
+                        <img src="@ImageTile.ThumbUrl(keeper)" alt="" loading="lazy" decoding="async" />
+                    </button>
+                    <div class="dupe-body">
+                        <div class="dupe-head">
+                            <h2 class="dupe-name">@d.Name</h2>
+                            <span class="dupe-meta">
+                                <span>@($"{Format.Count(d.Copies.Count(), "copy", "copies")}, {Format.Size(d.Wasted)} extra")</span>
+                                <span>@($"Shown {Format.Count(keeper.AccessCount, "time", "times")}")</span>
+                                <span title="@Format.DateTime(keeper.LastAccessedAt, Zone)">@($"Last shown {Format.Ago(keeper.LastAccessedAt, Zone)}")</span>
+                            </span>
+                        </div>
+                        <ul class="dupe-copies">
+                            @foreach (var v in d.Views)
+                            {
+                                var view = v;
+                                <li class="dupe-copy @(v.HasOwnCopy ? "" : "dupe-copy-shared")">
+                                    <span class="dupe-where">
+                                        <span class="dupe-gallery">
+                                            <a href="@($"g/{v.GalleryId}")">@v.GalleryName</a>
+                                            @if (v.IsHome)
+                                            {
+                                                <span class="tag" title="The gallery the frame showed it in first">First shown here</span>
+                                            }
+                                        </span>
+                                        <span class="dupe-sub">
+                                            @if (_library.Frames.Count > 1)
+                                            {
+                                                <span><Icon Name="frame" Size="13" /> @v.FrameName</span>
+                                            }
+                                            @if (v.HasOwnCopy)
+                                            {
+                                                <span>@Format.Size(v.Size)</span>
+                                            }
+                                            else if (v.Exists)
+                                            {
+                                                <span>@($"No own copy, shows the one in {v.StoredInGalleryName}")</span>
+                                            }
+                                        </span>
+                                    </span>
+                                    @if (v.HasOwnCopy)
+                                    {
+                                        <button type="button" class="btn btn-secondary btn-sm" disabled="@Busy" @onclick="() => KeepOnlyAsync(dupe, view)"
+                                                title="@($"Deletes the other copies; the image stays listed in every gallery")">
+                                            <Icon Name="check" Size="15" />Keep only this
+                                        </button>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    </div>
+                </article>
+            }
+        </div>
+
+        @if (_shown.Count > _limit)
+        {
+            <div class="more">
+                <button type="button" class="btn btn-secondary" @onclick="() => _limit += Page">
+                    @($"Show {Format.Number(Math.Min(Page, _shown.Count - _limit))} more")
+                </button>
+                <span class="muted small">@($"{Format.Number(_limit)} of {Format.Number(_shown.Count)} shown")</span>
+            </div>
+        }
+    }
+
+    <ImageViewer Images="_viewing" @bind-Index="_viewingIndex" />
+}
+
+@code {
+    private const int Page = 60;
+
+    [SupplyParameterFromQuery] public string? Q { get; set; }
+    [SupplyParameterFromQuery] public string? Frame { get; set; }
+
+    private Library? _library;
+    private List<Duplicate> _shown = [];
+    private int _limit = Page;
+    private IReadOnlyList<ImageView> _viewing = [];
+    private int _viewingIndex = -1;
+    private CancellationTokenSource? _bulk;
+    private string _bulkStatus = "";
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    protected override void OnParametersSet()
+    {
+        _limit = Page;
+        Apply();
+    }
+
+    private async Task LoadAsync()
+    {
+        _library = await LibraryService.LoadAsync(PageToken);
+        Apply();
+    }
+
+    private void Apply()
+    {
+        if (_library is null) return;
+        _shown = _library.Duplicates.Where(d =>
+                Filters.Matches(Q, [d.Name, .. d.Views.Select(v => v.GalleryName)]) &&
+                (Frame is null || d.Views.Any(v => v.FrameName == Frame)))
+            .ToList();
+    }
+
+    private void Set(string? q = null, string? frame = null)
+    {
+        ReplaceQuery(new Dictionary<string, object?>
+        {
+            ["q"] = q is null ? Q : q.Length == 0 ? null : q,
+            ["frame"] = frame is null ? Frame : frame.Length == 0 ? null : frame,
+        });
+    }
+
+    private void ClearFilters() => ReplaceQuery(new Dictionary<string, object?> { ["q"] = null, ["frame"] = null });
+
+    // The viewer goes through the image's copies.
+    private void Open(Duplicate d)
+    {
+        _viewing = d.Copies.ToList();
+        _viewingIndex = 0;
+    }
+
+    private async Task KeepOnlyAsync(Duplicate d, ImageView keep)
+    {
+        var others = d.Copies.Where(c => c.GalleryId != keep.GalleryId).ToList();
+        var ok = await Ui.Confirm.AskAsync(
+            $"Keep only the copy in {keep.GalleryName}?",
+            $"This deletes {Format.Count(others.Count, "copy", "copies")} of {d.Name} ({Format.Size(others.Sum(o => o.Size))}): in {string.Join(", ", others.Select(o => o.GalleryName))}. The image stays listed in all its galleries.",
+            "Delete copies", danger: true);
+        if (!ok) return;
+        (int Files, long Bytes) result = default;
+        if (await RunAsync(async () => result = await LibraryService.KeepOneCopyAsync(d.Id, keep.GalleryId, PageToken)))
+        {
+            Ui.Toast.Success($"Deleted {Format.Count(result.Files, "copy", "copies")} of {d.Name} ({Format.Size(result.Bytes)}).");
+            await LoadAsync();
+        }
+    }
+
+    private async Task KeepOneOfEachAsync()
+    {
+        var duplicates = _shown.ToList();
+        var files = duplicates.Sum(d => d.Copies.Count() - 1);
+        var ok = await Ui.Confirm.AskAsync(
+            $"Keep one copy of {Format.Count(duplicates.Count, "image", "images")}?",
+            $"This deletes {Format.Count(files, "extra copy", "extra copies")} ({Format.Size(duplicates.Sum(d => d.Wasted))}). Each image keeps the copy in the gallery it was first shown in (or the first gallery that has one) and stays listed in all its galleries. It can't be undone.",
+            "Delete copies", danger: true);
+        if (!ok) return;
+
+        DedupeResult? result = null;
+        bool done;
+        using (var bulk = CancellationTokenSource.CreateLinkedTokenSource(PageToken))
+        {
+            _bulk = bulk;
+            _bulkStatus = "";
+            var sinceRender = System.Diagnostics.Stopwatch.StartNew();
+            var progress = new Progress<string>(status =>
+            {
+                _bulkStatus = status;
+                if (sinceRender.ElapsedMilliseconds < 200) return;
+                sinceRender.Restart();
+                StateHasChanged();
+            });
+            try
+            {
+                done = await RunAsync(async () => result = await LibraryService.KeepOneCopyOfEachAsync(duplicates, progress, bulk.Token));
+            }
+            finally
+            {
+                _bulk = null;
+            }
+            if (!done && bulk.IsCancellationRequested && !PageToken.IsCancellationRequested)
+                Ui.Toast.Info("Stopped. The copies deleted until then are gone; the rest are still there.");
+        }
+        if (done && result is not null)
+            Ui.Toast.Success($"Deleted {Format.Count(result.FilesDeleted, "extra copy", "extra copies")} of {Format.Count(result.Images, "image", "images")} ({Format.Size(result.BytesFreed)}).");
+        if (!PageToken.IsCancellationRequested)
+            await LoadAsync();
+    }
+}

@@ -123,6 +123,19 @@ namespace MeuralImageBackup.Core.Data.Migrations
                     b.ToTable("LastGalleries");
                 });
 
+            modelBuilder.Entity("MeuralImageBackup.Core.Models.Setting", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Value")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("Settings");
+                });
+
             modelBuilder.Entity("MeuralImageBackup.Core.Models.GalleryImage", b =>
                 {
                     b.HasOne("MeuralImageBackup.Core.Models.Gallery", null)

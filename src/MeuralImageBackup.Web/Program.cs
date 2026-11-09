@@ -18,7 +18,10 @@ var storage = builder.Configuration.GetSection("Storage");
 var paths = StoragePaths.From(storage["UploadsPath"], storage["DatabaseDirectory"], storage["ThumbnailsPath"], builder.Environment.ContentRootPath);
 paths.CreateDirectories();
 
-builder.Services.AddMeuralCore(paths, ImagePathsSetting(builder.Configuration["USE_FRAME_NAME_IN_PATH"]));
+// SKIP_DUPLICATE_DOWNLOADS=true: an image stored in one gallery's folder isn't downloaded again into
+// another gallery's. Off unless set, so the folders keep MeuralImageUploader's layout.
+var skipStoredImages = MeuralImageBackup.Core.Services.UploadOptions.ParseSkipStoredImages(builder.Configuration["SKIP_DUPLICATE_DOWNLOADS"]);
+builder.Services.AddMeuralCore(paths, ImagePathsSetting(builder.Configuration["USE_FRAME_NAME_IN_PATH"]), skipStoredImages);
 
 builder.Services.AddDataProtection()
     .SetApplicationName("MeuralImageBackup")
@@ -34,6 +37,8 @@ builder.Services.Configure<RequestLocalizationOptions>(o =>
     o.FallBackToParentCultures = true;
     o.RequestCultureProviders = [new AcceptLanguageHeaderRequestCultureProvider()];
 });
+
+builder.Services.AddSingleton<PhotoSourceLibrary>();
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents(o => o.DetailedErrors = builder.Environment.IsDevelopment());
@@ -53,9 +58,10 @@ await using (var scope = app.Services.CreateAsyncScope())
     await using var db = await factory.CreateDbContextAsync();
     await db.Database.MigrateAsync();
 }
-app.Logger.LogInformation("{App} {Version}: images in {Uploads}, database {Database}, frame folders {FrameFolders}",
+app.Logger.LogInformation("{App} {Version}: images in {Uploads}, database {Database}, frame folders {FrameFolders}, duplicate downloads {Duplicates}",
     AppInfo.Name, AppInfo.Version, paths.UploadsPath, paths.DatabaseFile,
-    ImagePathsSetting(app.Configuration["USE_FRAME_NAME_IN_PATH"]) ? "on" : "off");
+    ImagePathsSetting(app.Configuration["USE_FRAME_NAME_IN_PATH"]) ? "on" : "off",
+    skipStoredImages ? "skipped" : "kept");
 
 if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
@@ -79,6 +85,7 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 app.MapCompatibleApi();
 app.MapImageEndpoints();
+app.MapPhotoSourceApi();
 
 app.Run();
 

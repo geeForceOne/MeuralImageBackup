@@ -1,0 +1,185 @@
+@page "/settings"
+@inherits AppPage
+@inject ApiTokenService Tokens
+@inject UploadOptions UploadOptions
+@inject StoragePaths Storage
+@inject MeuralImageBackup.Core.Files.ImagePaths ImagePaths
+@inject IJSRuntime JS
+
+<PageTitle>Settings · @AppInfo.Name</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1>Settings</h1>
+        <p class="page-sub"><span>For this installation. The theme is chosen in the sidebar, per browser.</span></p>
+    </div>
+</div>
+
+<section class="settings-section" aria-labelledby="api-title">
+    <div class="settings-head">
+        <h2 id="api-title"><Icon Name="key" Size="18" />MeuralManager access</h2>
+        <p>
+            MeuralManager can browse this backup's images by date or gallery and put them into Meural playlists,
+            as a photo source next to Immich. It reads them through an API that needs a token. The API only reads;
+            nothing can be changed or deleted through it.
+        </p>
+    </div>
+
+    @if (_hasToken is null)
+    {
+        <div class="settings-loading"><BrandMark Size="24" Busy="true" /></div>
+    }
+    else
+    {
+        <dl class="settings-facts">
+            <div>
+                <dt>Server URL</dt>
+                <dd class="copy-row">
+                    <code>@ServerUrl</code>
+                    <button type="button" class="btn btn-ghost btn-sm" @onclick='() => CopyAsync(ServerUrl, "The server URL")'><Icon Name="copy-text" Size="15" />Copy</button>
+                </dd>
+            </div>
+            <div>
+                <dt>Token</dt>
+                @if (_newToken is not null)
+                {
+                    <dd>
+                        <div class="copy-row token-row">
+                            <code class="token">@_newToken</code>
+                            <button type="button" class="btn btn-secondary btn-sm" @onclick='() => CopyAsync(_newToken, "The token")'><Icon Name="copy-text" Size="15" />Copy</button>
+                        </div>
+                        <p class="notice notice-warn notice-inline"><Icon Name="alert" Size="16" /> <span><strong>It's only shown now.</strong> Only a fingerprint of it is saved, so if you lose it, generate a new one.</span></p>
+                    </dd>
+                }
+                else if (_hasToken == true)
+                {
+                    <dd>
+                        <span class="state state-on"><Icon Name="check" Size="15" />Set</span>
+                        @if (_createdAt is { } at)
+                        {
+                            <span class="muted small">since @Format.DateTime(at, Zone)</span>
+                        }
+                        <p class="muted small">It can't be shown again. Generating a new one stops the old one working.</p>
+                    </dd>
+                }
+                else
+                {
+                    <dd>
+                        <span class="state">Not set</span>
+                        <p class="muted small">Until there's a token, the API turns every request away.</p>
+                    </dd>
+                }
+            </div>
+        </dl>
+
+        <div class="settings-actions">
+            <button type="button" class="btn btn-primary" disabled="@Busy" @onclick="GenerateAsync">
+                <Icon Name="key" Size="16" />@(_hasToken == true ? "Generate a new token" : "Generate token")
+            </button>
+            @if (_hasToken == true)
+            {
+                <button type="button" class="btn btn-ghost btn-danger-text" disabled="@Busy" @onclick="RevokeAsync">
+                    <Icon Name="x" Size="16" />Revoke token
+                </button>
+            }
+        </div>
+
+        <details class="settings-more">
+            <summary>What the API offers</summary>
+            <p>
+                The same calls as Immich's API, for the parts MeuralManager uses, with the token in an <code>X-API-Key</code> header:
+            </p>
+            <ul>
+                <li><code>GET /api/albums</code>: the galleries, each with its images.</li>
+                <li><code>POST /api/search/metadata</code>: images, newest first, by date and gallery, in pages. The date is when the backup first saved the image.</li>
+                <li><code>POST /api/search/smart</code>: a text search on image and gallery names.</li>
+                <li><code>GET /api/assets/{id}/thumbnail</code> and <code>/original</code>: the image's thumbnail and its file.</li>
+                <li><code>GET /api/users/me</code>: a connection test.</li>
+            </ul>
+            <p>Immich's people, faces and AI search aren't available.</p>
+        </details>
+    }
+</section>
+
+<section class="settings-section" aria-labelledby="container-title">
+    <div class="settings-head">
+        <h2 id="container-title"><Icon Name="disk" Size="18" />Container</h2>
+        <p>Set through the container's environment; change them there and restart the container.</p>
+    </div>
+    <dl class="settings-facts">
+        <div>
+            <dt><code>USE_FRAME_NAME_IN_PATH</code></dt>
+            <dd>@(ImagePaths.UseFrameFolder ? "On: images are saved as <frame>/<gallery>/<title>.jpeg" : "Off: images are saved as <gallery>/<title>.jpeg")</dd>
+        </div>
+        <div>
+            <dt><code>SKIP_DUPLICATE_DOWNLOADS</code></dt>
+            <dd>@(UploadOptions.SkipStoredImages ? "On: an image is stored once, in the first gallery that showed it" : "Off: every gallery that shows an image gets its own copy")</dd>
+        </div>
+        <div>
+            <dt>Images</dt>
+            <dd><code>@Storage.UploadsPath</code></dd>
+        </div>
+        <div>
+            <dt>Database</dt>
+            <dd><code>@Storage.DatabaseFile</code></dd>
+        </div>
+        <div>
+            <dt>Version</dt>
+            <dd>@AppInfo.Version <span class="muted small">(API @AppInfo.ApiVersion)</span></dd>
+        </div>
+    </dl>
+</section>
+
+@code {
+    private bool? _hasToken;
+    private DateTime? _createdAt;
+    private string? _newToken;
+
+    private string ServerUrl => Nav.BaseUri.TrimEnd('/');
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _hasToken = await Tokens.HasTokenAsync(PageToken);
+        _createdAt = await Tokens.CreatedAtAsync(PageToken);
+    }
+
+    private async Task GenerateAsync()
+    {
+        if (_hasToken == true && !await Ui.Confirm.AskAsync("Generate a new token?",
+                "The current token stops working right away. MeuralManager needs the new one before it can browse this backup again.",
+                "Generate"))
+            return;
+        string? token = null;
+        if (await RunAsync(async () => token = await Tokens.GenerateAsync(PageToken)))
+        {
+            _newToken = token;
+            await LoadAsync();
+        }
+    }
+
+    private async Task RevokeAsync()
+    {
+        if (!await Ui.Confirm.AskAsync("Revoke the token?",
+                "MeuralManager can't browse this backup any more until you generate a new token and enter it there.",
+                "Revoke", danger: true))
+            return;
+        if (await RunAsync(() => Tokens.RevokeAsync(PageToken)))
+        {
+            _newToken = null;
+            await LoadAsync();
+            Ui.Toast.Success("Token revoked.");
+        }
+    }
+
+    private async Task CopyAsync(string text, string what)
+    {
+        var copied = false;
+        try { copied = await JS.InvokeAsync<bool>("meural.copy", text); } catch (JSException) { }
+        if (copied)
+            Ui.Toast.Success($"{what} was copied.");
+        else
+            Ui.Toast.Info("This browser doesn't allow copying here; select the text and copy it by hand.");
+    }
+}

@@ -9,11 +9,23 @@ namespace MeuralImageBackup.Core.Services;
 // What Home Assistant posts to /api/meural when a frame shows an image. All optional, as before.
 public sealed record MeuralUpload(string? FrameName, string? Title, string? Gallery, string? Url, int? Id);
 
+// SkipStoredImages (SKIP_DUPLICATE_DOWNLOADS=true): an image that's stored in another gallery's
+// folder already isn't downloaded again into the gallery that shows it now; that gallery lists it
+// and shows the stored copy. Off by default, so the folders keep the old layout (every gallery's
+// folder has all its images).
+public sealed record UploadOptions(bool SkipStoredImages = false)
+{
+    // Only "true" (any casing) turns it on.
+    public static bool ParseSkipStoredImages(string? value) => bool.TryParse(value, out var skip) && skip;
+}
+
 // Records a shown image and keeps a copy of it: MeuralImageUploader's /api/meural, with the same
 // counting and file layout. Uploads are handled one at a time, so two frames reporting at once
 // can't count a gallery twice.
-public sealed class UploadService(IDbContextFactory<MeuralDb> dbFactory, ImagePaths paths, HttpClient http, ILogger<UploadService> logger)
+public sealed class UploadService(IDbContextFactory<MeuralDb> dbFactory, ImagePaths paths, HttpClient http, ILogger<UploadService> logger, UploadOptions? options = null)
 {
+    private readonly UploadOptions _options = options ?? new UploadOptions();
+
     private static readonly SemaphoreSlim Gate = new(1, 1);
 
     public async Task HandleAsync(MeuralUpload upload, CancellationToken ct = default)
@@ -105,6 +117,24 @@ public sealed class UploadService(IDbContextFactory<MeuralDb> dbFactory, ImagePa
         return candidates.FirstOrDefault(i => FileNaming.FileName(i.Name, 0) == fileName);
     }
 
+    // Where the recorded image with this Meural id has a file, in any of its galleries' folders; null
+    // when it has none.
+    private async Task<string?> StoredCopyAsync(int fileId, CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var image = await db.Images.AsNoTracking().FirstOrDefaultAsync(i => i.FileId == fileId, ct);
+        if (image is null)
+            return null;
+        var linked = db.GalleryImages.Where(l => l.ImageId == image.Id).Select(l => l.GalleryId);
+        var galleries = await db.Galleries.AsNoTracking()
+            .Where(g => g.Id == image.GalleryId || linked.Contains(g.Id))
+            .Select(g => new { g.FrameName, g.Name })
+            .ToListAsync(ct);
+        return galleries
+            .Select(g => paths.File(g.FrameName, g.Name, image.Name, image.FileId))
+            .FirstOrDefault(r => paths.FullPath(r) is { } full && File.Exists(full));
+    }
+
     // Downloads the image unless its file is there already. Goes to a temporary file first, so a
     // failed or cut-off download leaves nothing behind; an empty or failed answer isn't kept.
     private async Task DownloadAsync(MeuralUpload upload, CancellationToken ct)
@@ -118,6 +148,12 @@ public sealed class UploadService(IDbContextFactory<MeuralDb> dbFactory, ImagePa
         }
         if (File.Exists(path))
             return;
+        if (_options.SkipStoredImages && upload.FrameName is not null && upload.Id is { } fileId &&
+            await StoredCopyAsync(fileId, ct) is { } stored)
+        {
+            logger.LogInformation("Not saving {File}: the image is stored as {Stored} already", relative, stored);
+            return;
+        }
         if (!Uri.TryCreate(upload.Url, UriKind.Absolute, out var url) || url.Scheme is not ("http" or "https"))
         {
             logger.LogWarning("Not saving {File}: no usable image URL ({Url})", relative, upload.Url);

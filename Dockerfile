@@ -25,6 +25,7 @@ COPY --from=build /app .
 # - port 80 inside the container (.NET 8 and later default to 8080);
 # - the images in /app/uploads and the SQLite database in /app/database (relative to /app);
 # - USE_FRAME_NAME_IN_PATH, true unless set to false.
+# SKIP_DUPLICATE_DOWNLOADS (new, off unless set to true) stores each image only once.
 # Runs as root, like before, so existing volumes work without changing their owner.
 ENV ASPNETCORE_HTTP_PORTS=80 \
     USE_FRAME_NAME_IN_PATH=true

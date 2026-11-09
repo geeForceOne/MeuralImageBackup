@@ -20,6 +20,17 @@ window.meural = {
         if (!element || element.contains(document.activeElement) || document.querySelector(".modal")) return;
         element.focus({ preventScroll: true });
     },
+
+    // Copies text to the clipboard; false when the browser doesn't allow it (plain http on
+    // another host than localhost has no clipboard API), so the page can say to copy by hand.
+    copy: async (text) => {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch {
+            return false;
+        }
+    },
 };
 
 // A confirmation dialog over the image viewer gives the focus back to the viewer when it closes.

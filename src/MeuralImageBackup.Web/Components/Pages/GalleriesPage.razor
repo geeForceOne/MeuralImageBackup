@@ -18,10 +18,23 @@
     @if (_library is not null)
     {
         <div class="page-actions">
-            <button type="button" class="btn btn-secondary" disabled="@Busy" @onclick="SyncAsync"
-                    title="Adds the galleries and images found in the uploads folder that the database doesn't list">
-                <Icon Name="sync" Size="16" />Sync with disk
-            </button>
+            @if (_sync is not null)
+            {
+                <span class="busy-status" role="status" aria-live="polite">
+                    <BrandMark Size="22" Busy="true" />
+                    <span class="busy-text"><strong>Syncing with disk…</strong><span class="busy-detail">@_syncStatus</span></span>
+                </span>
+                <button type="button" class="btn btn-secondary" disabled="@_sync.IsCancellationRequested" @onclick="() => _sync.Cancel()">
+                    <Icon Name="x" Size="16" />@(_sync.IsCancellationRequested ? "Stopping…" : "Cancel")
+                </button>
+            }
+            else
+            {
+                <button type="button" class="btn btn-secondary" disabled="@Busy" @onclick="SyncAsync"
+                        title="Adds the galleries and images found in the uploads folder that the database doesn't list">
+                    <Icon Name="sync" Size="16" />Sync with disk
+                </button>
+            }
         </div>
     }
 </div>
@@ -48,6 +61,12 @@ else
         @if (_missing > 0)
         {
             <a class="stat stat-warn" href="images?missing=true"><span class="stat-value num">@Format.Number(_missing)</span><span class="stat-label">Files missing</span></a>
+        }
+        @if (_library.Duplicates.Count > 0)
+        {
+            <a class="stat" href="duplicates" title="@($"Extra copies take {Format.Size(_library.Duplicates.Sum(d => d.Wasted))}")">
+                <span class="stat-value num">@Format.Number(_library.Duplicates.Count)</span><span class="stat-label">Stored more than once</span>
+            </a>
         }
     </div>
 
@@ -194,6 +213,8 @@ else
     private List<GalleryView> _shown = [];
     private int _missing;
     private string _view = "grid";
+    private CancellationTokenSource? _sync;
+    private string _syncStatus = "";
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
@@ -261,11 +282,42 @@ else
     private void ClearFilters() =>
         ReplaceQuery(new Dictionary<string, object?> { ["q"] = null, ["frame"] = null, ["age"] = null, ["sort"] = Sort });
 
-    // Adds what's in the uploads folder but not in the database; nothing is removed.
+    // Adds what's in the uploads folder but not in the database; nothing is removed. It can take a
+    // while on a big collection, so it shows what it's doing and can be stopped; what it added up
+    // to then stays.
     private async Task SyncAsync()
     {
         SyncResult? result = null;
-        if (!await RunAsync(async () => result = await LibraryService.SyncWithDiskAsync(null, PageToken)) || result is null)
+        bool ok;
+        using (var sync = CancellationTokenSource.CreateLinkedTokenSource(PageToken))
+        {
+            _sync = sync;
+            _syncStatus = "Starting";
+            // Progress<T> reports on the circuit's context; redraw at most a few times a second.
+            var sinceRender = System.Diagnostics.Stopwatch.StartNew();
+            var progress = new Progress<string>(status =>
+            {
+                _syncStatus = status;
+                if (sinceRender.ElapsedMilliseconds < 200) return;
+                sinceRender.Restart();
+                StateHasChanged();
+            });
+            try
+            {
+                ok = await RunAsync(async () => result = await LibraryService.SyncWithDiskAsync(progress, sync.Token));
+            }
+            finally
+            {
+                _sync = null;
+            }
+            if (!ok && sync.IsCancellationRequested && !PageToken.IsCancellationRequested)
+            {
+                Ui.Toast.Info("Sync stopped. What it had added so far stays.");
+                await LoadAsync();
+                return;
+            }
+        }
+        if (!ok || result is null)
             return;
         if (result.Changed)
         {

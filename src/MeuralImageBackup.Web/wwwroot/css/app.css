@@ -760,6 +760,104 @@ a.stat:hover { border-color: var(--rule-strong); text-decoration: none; backgrou
 #components-reconnect-modal.components-reconnect-retrying .components-reconnect-repeated-attempt-visible,
 #components-reconnect-modal.components-reconnect-failed .components-reconnect-failed-visible { display: block; }
 
+/* ---------- Busy status (a long action that's running) ---------- */
+
+.busy-status { display: inline-flex; align-items: center; gap: 10px; min-width: 0; max-width: 46ch; }
+.busy-status .brand-mark, .busy-status svg { flex: none; }
+.busy-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.busy-text strong { font-size: var(--t-sm); font-weight: 600; }
+.busy-detail { color: var(--pencil); font-size: var(--t-xs); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- Duplicates ---------- */
+
+.dupe-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr)); gap: 14px; }
+.dupe {
+    display: grid;
+    grid-template-columns: 132px minmax(0, 1fr);
+    gap: 14px;
+    padding: 12px;
+    background: var(--sheet);
+    border: 1px solid var(--rule);
+    border-radius: var(--r-lg);
+}
+.dupe-photo {
+    position: relative;
+    align-self: start;
+    aspect-ratio: 1;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--rule);
+    border-radius: var(--r-md);
+    background: var(--sheet-3);
+    cursor: zoom-in;
+}
+.dupe-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: transform 160ms; }
+.dupe-photo:hover img { transform: scale(1.04); }
+.dupe-body { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.dupe-head { display: flex; flex-direction: column; gap: 2px; }
+.dupe-name { margin: 0; font-size: var(--t-md); font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.dupe-meta { display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--pencil); font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
+.dupe-copies { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.dupe-copy {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px 12px;
+    flex-wrap: wrap;
+    padding: 7px 8px 7px 11px;
+    border: 1px solid var(--rule);
+    border-radius: var(--r-md);
+    background: var(--paper);
+}
+.dupe-copy-shared { border-style: dashed; background: transparent; }
+.dupe-where { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 200px; }
+.dupe-gallery { font-size: var(--t-sm); font-weight: 500; overflow-wrap: anywhere; }
+.dupe-gallery .tag { margin-left: 8px; }
+.dupe-sub { display: flex; flex-wrap: wrap; gap: 0 10px; color: var(--pencil); font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
+.dupe-sub span { display: inline-flex; align-items: center; gap: 4px; }
+
+.tile-badge-left { right: auto; left: 7px; padding: 3px 5px; }
+
+/* ---------- Settings ---------- */
+
+.side-version.active { background: var(--accent-soft); color: var(--accent); }
+.topbar-actions { display: flex; align-items: center; gap: 6px; }
+
+.settings-section {
+    margin-bottom: 18px;
+    padding: 18px 20px 20px;
+    background: var(--sheet);
+    border: 1px solid var(--rule);
+    border-radius: var(--r-lg);
+}
+.settings-head h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: var(--t-lg); }
+.settings-head h2 .icon { color: var(--accent); }
+.settings-head p { max-width: 75ch; margin: 6px 0 0; color: var(--pencil); }
+.settings-loading { padding: 18px 0 4px; }
+.settings-facts { display: grid; grid-template-columns: minmax(160px, max-content) minmax(0, 1fr); gap: 12px 24px; margin: 18px 0 0; }
+.settings-facts > div { display: contents; }
+.settings-facts dt { color: var(--pencil); font-size: var(--t-sm); padding-top: 3px; }
+.settings-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.settings-facts dd p { margin: 6px 0 0; }
+.copy-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+.token-row code.token {
+    padding: 6px 10px;
+    border: 1px solid var(--accent);
+    border-radius: var(--r-md);
+    background: var(--accent-soft);
+    font-size: var(--t-sm);
+    word-break: break-all;
+}
+.notice-inline { display: flex; align-items: flex-start; gap: 8px; margin: 10px 0 0; max-width: 70ch; }
+.state { display: inline-flex; align-items: center; gap: 5px; margin-right: 8px; font-weight: 500; }
+.state-on { color: var(--good); }
+.settings-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.settings-more { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--rule); color: var(--ink-soft); }
+.settings-more summary { cursor: pointer; color: var(--accent); font-weight: 500; }
+.settings-more ul { margin: 8px 0; padding-left: 20px; }
+.settings-more li { margin: 4px 0; }
+.settings-more p { margin: 8px 0; max-width: 80ch; }
+
 /* ---------- Tablets: an icon rail instead of the full sidebar ---------- */
 
 @media (max-width: 1100px) {
@@ -809,7 +907,7 @@ a.stat:hover { border-color: var(--rule-strong); text-decoration: none; backgrou
         bottom: 0;
         z-index: 30;
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(4, 1fr);
         height: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
         padding-bottom: env(safe-area-inset-bottom, 0px);
         background: var(--sheet);
@@ -845,6 +943,11 @@ a.stat:hover { border-color: var(--rule-strong); text-decoration: none; backgrou
     .tile-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 110px), 1fr)); gap: 8px; }
     .tile-caption { padding: 6px 8px 8px; }
     .fact-strip { gap: 10px 22px; padding: 12px 14px; }
+    .page-actions .busy-status { flex: 1 1 100%; max-width: none; }
+    .settings-section { padding: 14px 14px 16px; }
+    .settings-facts { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+    .settings-facts dd { margin-bottom: 10px; }
+    .dupe { grid-template-columns: 76px minmax(0, 1fr); gap: 10px; padding: 10px; }
 
     /* Image table rows: the thumbnail on the left, the rest stacked beside it. */
     .image-table thead { display: none; }
