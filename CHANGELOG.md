@@ -1,5 +1,11 @@
 # Release notes
 
+## 2.4.1 - 2026-11-09
+
+### Fixed
+
+- **Keep this one** no longer makes the list of identical files flicker: the group disappears and the others close the gap.
+
 ## 2.4.0 - 2026-11-09
 
 ### New
