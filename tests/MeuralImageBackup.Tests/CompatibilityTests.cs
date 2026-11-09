@@ -73,7 +73,7 @@ public class CompatibilityTests
 }
 
 // The HTTP side, through the real app.
-public class ApiTests : IClassFixture<ApiTests.App>
+public partial class ApiTests : IClassFixture<ApiTests.App>
 {
     public sealed class App : WebApplicationFactory<Program>
     {

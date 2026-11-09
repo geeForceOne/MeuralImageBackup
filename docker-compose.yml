@@ -8,6 +8,8 @@ services:
     environment:
       # false leaves out the frame's folder: uploads/<gallery>/<title>.jpeg
       USE_FRAME_NAME_IN_PATH: "true"
+      # true stores each image once, instead of a copy in every gallery folder that shows it
+      SKIP_DUPLICATE_DOWNLOADS: "false"
     volumes:
       # The same two volumes as MeuralImageUploader 1.x; point them at an existing installation's
       # folders to keep its images and database.

@@ -179,7 +179,7 @@ public class SyncTests
     }
 
     [Fact]
-    public async Task RemovingMissingFilesWorksPerGallery()
+    public async Task AnImageIsMissingOnlyWhenNoGalleryHasItsFile()
     {
         using var storage = new TestStorage();
         var db = await storage.MigratedDbAsync();
@@ -189,10 +189,17 @@ public class SyncTests
         storage.WriteUpload("gArt/People [X]/Portrait.jpeg");
         var library = Library(storage, db);
         await library.SyncWithDiskAsync();
-        File.Delete(storage.Upload("gArt/People/Portrait.jpeg"));
 
-        Assert.Equal(1, await library.RemoveMissingAsync());
-        var left = Assert.Single((await library.LoadAsync()).Images);
-        Assert.Equal("People [X]", left.GalleryName);
+        // One copy gone: that gallery shows the other one, nothing is missing.
+        File.Delete(storage.Upload("gArt/People/Portrait.jpeg"));
+        Assert.Equal(0, await library.RemoveMissingAsync());
+        var views = (await library.LoadAsync()).Images;
+        Assert.Equal(2, views.Count);
+        Assert.All(views, v => Assert.Equal("gArt/People [X]/Portrait.jpeg", v.RelativePath));
+
+        // Both gone: both entries go.
+        File.Delete(storage.Upload("gArt/People [X]/Portrait.jpeg"));
+        Assert.Equal(2, await library.RemoveMissingAsync());
+        Assert.Empty((await library.LoadAsync()).Images);
     }
 }

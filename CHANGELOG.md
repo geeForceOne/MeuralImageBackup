@@ -1,5 +1,20 @@
 # Release notes
 
+## 2.2.0 - 2026-11-09
+
+### New
+
+- **Duplicates** page: lists every image that's stored in more than one gallery's folder, with how much space the extra copies take. Keep only the copy you choose, or one copy of each in one go (the one in the gallery the image was first shown in). The image stays listed in all its galleries, which show the copy that's left.
+- New setting `SKIP_DUPLICATE_DOWNLOADS`: set it to `true` and an image that's stored already isn't downloaded again when a frame shows it from another gallery. That gallery lists it and shows the stored copy. Off by default, so the folders keep the layout they had.
+- **Sync with disk** shows what it's doing while it runs, and can be stopped.
+- **A photo source for MeuralManager**: MeuralManager can browse the backup by date or gallery and put images into its playlists, next to Immich. It reads through a read-only part of Immich's API, with a token generated on the new **Settings** page.
+- **Settings** page: the MeuralManager token (generate, replace, revoke), and the container's settings at a glance.
+
+### Fixed
+
+- Deleting an image or a gallery no longer deletes an image's last copy while other galleries still list it: the file moves to one of those.
+- A gallery whose copy of an image was deleted, while another gallery still has one, shows that copy instead of "file missing".
+
 ## 2.1.0 - 2026-11-08
 
 ### New

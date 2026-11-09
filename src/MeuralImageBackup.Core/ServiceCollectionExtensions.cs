@@ -8,13 +8,16 @@ namespace MeuralImageBackup.Core;
 
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddMeuralCore(this IServiceCollection services, StoragePaths storage, bool useFrameFolder)
+    public static IServiceCollection AddMeuralCore(this IServiceCollection services, StoragePaths storage, bool useFrameFolder, bool skipStoredImages = false)
     {
         services.AddSingleton(storage);
+        services.AddSingleton(new UploadOptions(skipStoredImages));
         services.AddSingleton(new ImagePaths(storage, useFrameFolder));
         services.AddDbContextFactory<MeuralDb>(o => o.UseSqlite(storage.ConnectionString));
         services.AddSingleton<LibraryService>();
         services.AddSingleton<ThumbnailService>();
+        services.AddSingleton<SettingsService>();
+        services.AddSingleton<ApiTokenService>();
 
         // The downloads from Meural's servers. Their firewall turns away requests without a User-Agent.
         services.AddHttpClient<UploadService>(client =>

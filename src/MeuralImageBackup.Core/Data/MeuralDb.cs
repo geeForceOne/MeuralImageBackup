@@ -12,6 +12,7 @@ public class MeuralDb(DbContextOptions<MeuralDb> options) : DbContext(options)
     public DbSet<LastGallery> LastGalleries => Set<LastGallery>();
     public DbSet<Image> Images => Set<Image>();
     public DbSet<GalleryImage> GalleryImages => Set<GalleryImage>();
+    public DbSet<Setting> Settings => Set<Setting>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -37,5 +38,7 @@ public class MeuralDb(DbContextOptions<MeuralDb> options) : DbContext(options)
 
         modelBuilder.Entity<LastGallery>(b =>
             b.HasIndex(g => g.FrameName).HasDatabaseName("IX_LastGallery_FrameName"));
+
+        modelBuilder.Entity<Setting>(b => b.HasKey(s => s.Key));
     }
 }

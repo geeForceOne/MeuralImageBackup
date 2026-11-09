@@ -51,6 +51,10 @@
                 {
                     <dt>File size</dt><dd>@Format.Size(image.Size)</dd>
                 }
+                @if (image.StoredInGalleryName is { } storedIn)
+                {
+                    <dt>Stored in</dt><dd><a href="@($"g/{image.StoredInGalleryId}")" @onclick="CloseAsync">@storedIn</a> (this gallery has no copy of its own)</dd>
+                }
                 <dt>File</dt><dd class="facts-path"><code>@image.RelativePath</code></dd>
             </dl>
             <div class="viewer-actions">
@@ -81,6 +85,14 @@
     [Parameter] public EventCallback<ImageView> OnDelete { get; set; }
 
     private ElementReference _root;
+
+    // What deleting the image from its gallery does, for the confirmation.
+    public static string DeleteMessage(ImageView image) =>
+        image.StoredInGalleryName is { } storedIn
+            ? $"This gallery shows the copy in {storedIn}, which stays. This removes the image from {image.GalleryName} only."
+            : image.Exists
+                ? "This deletes the image's file and its entry in this gallery; in other galleries it stays. If a frame shows it again, it's downloaded again."
+                : "Its file isn't there; this removes the entry. If a frame shows it again, it's downloaded again.";
 
     private ImageView? Current => Index >= 0 && Index < Images.Count ? Images[Index] : null;
 

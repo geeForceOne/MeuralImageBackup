@@ -19,6 +19,8 @@ It's the successor of MeuralImageUploader 1.x and a drop-in replacement for it: 
 - **Find and filter.** Search by name, filter by frame and by "not shown for N days", and sort any way you like. Filters live in the URL, so Back brings them back.
 - **Sync with disk.** One button adds what's in the uploads folder but missing from the database: folders become galleries, and an image shown from several galleries is listed in each.
 - **Clean up.** Delete every gallery that hasn't been shown for a while in one go, and spot and remove entries whose file has gone missing.
+- **Duplicates.** See which images are stored in several gallery folders and keep one copy, or store each image only once from the start (`SKIP_DUPLICATE_DOWNLOADS`).
+- **A photo source for MeuralManager.** MeuralManager can browse the backup by date or gallery and put images into playlists, next to Immich, with a token from the Settings page.
 - **Dark, light or system theme**, remembered per browser.
 - **Works on phones and tablets**: sidebar on desktop, icon rail on tablets, tab bar on phones.
 - **What's new.** After an update a banner links to the release notes.
@@ -60,6 +62,7 @@ Open http://localhost:8090. There's no login: put it on your home network, not o
 | `/app/uploads` | The images, as `<frame>/<gallery>/<title>.jpeg` |
 | `/app/database` | The SQLite database `meural.db` and the app's keys |
 | `USE_FRAME_NAME_IN_PATH` | `false` leaves out the frame's folder: `<gallery>/<title>.jpeg`. Default `true` |
+| `SKIP_DUPLICATE_DOWNLOADS` | `true` stores each image once: when a frame shows an image from another gallery and it's stored already, it isn't downloaded into that gallery's folder too. Default `false` |
 
 ### Coming from MeuralImageUploader 1.x?
 
@@ -95,6 +98,21 @@ Records the gallery and image and downloads `url`, unless the file is already th
 ### `GET /api/version`
 
 The app's version as plain text, for example `2.0.0.0`.
+
+### Photo source for MeuralManager
+
+A read-only part of [Immich's API](https://immich.app/docs/api), for what MeuralManager uses, so it can browse this backup the way it browses Immich. Every request needs the token from **Settings → MeuralManager access** in an `X-API-Key` header; until a token is generated, every request gets `401`. Only a fingerprint of the token is stored; generating a new one stops the old one working.
+
+| Call | What it answers |
+| --- | --- |
+| `GET /api/users/me` | A connection test |
+| `GET /api/albums` | The galleries, with how many images each has and a cover image |
+| `POST /api/search/metadata` | Images, newest first, in pages (`page`, `size`), by `takenAfter` / `takenBefore` and `albumIds`. The date is when the backup first saved the image |
+| `POST /api/search/smart` | The same, with `query` as a text search on image and gallery names |
+| `GET /api/assets/{id}/thumbnail?size=thumbnail\|preview\|fullsize` | The thumbnail (480 px), or the original for `preview` and `fullsize` |
+| `GET /api/assets/{id}/original` | The image's file |
+
+An image in several galleries is one asset. Immich's people, faces and AI search aren't available.
 
 ## Develop
 
