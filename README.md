@@ -12,14 +12,14 @@ It's the successor of MeuralImageUploader 1.x and a drop-in replacement for it: 
 
 ## What it does
 
-- **Backs up what your frames show.** Every image a frame displays lands on your disk as `<frame>/<gallery>/<title>.jpeg`, downloaded once and never again.
+- **Backs up what your frames show.** Every image a frame displays lands on your disk as `<frame>/<gallery>/<title>.jpeg`, downloaded once per gallery.
 - **Galleries.** A card per gallery with its images, the frame it played on, how often and when it was last shown. Each gallery has its own page.
 - **Images.** All images as a grid or a table, with thumbnails, view counts and file sizes.
 - **Viewer.** Open an image large, step through with the arrow keys, open or download the original, or delete it.
 - **Find and filter.** Search by name, filter by frame and by "not shown for N days", and sort any way you like. Filters live in the URL, so Back brings them back.
-- **Sync with disk.** One button adds what's in the uploads folder but missing from the database: folders become galleries, and an image shown from several galleries is listed in each.
+- **Sync with disk.** One button adds what's in the uploads folder but missing from the database: folders become galleries and files become images of the gallery whose folder they're in.
 - **Clean up.** Delete every gallery that hasn't been shown for a while in one go, and spot and remove entries whose file has gone missing.
-- **Duplicates.** Each image is stored once. See which older images are stored in several gallery folders and keep one copy, or find different images with identical files and keep one.
+- **Duplicates.** Find images whose files are byte for byte the same, for example the same artwork uploaded twice, and keep one.
 - **Loose files.** See the files in the uploads folder that no image uses, and delete them.
 - **A photo source for MeuralManager.** MeuralManager can browse the backup by date or gallery and put images into playlists, next to Immich, with a token from the Settings page.
 - **Dark, light or system theme**, remembered per browser.
@@ -97,7 +97,7 @@ Records the gallery and image and downloads `url`, unless the file is already th
 
 ### `GET /api/version`
 
-The app's version as plain text, for example `2.0.0.0`.
+The app's version as plain text, for example `2.5.0.0`.
 
 ### Photo source for MeuralManager
 
@@ -111,8 +111,6 @@ A read-only API for MeuralManager, so it can browse this backup and put its imag
 | `POST /api/search/smart` | The same, with `query` as a text search on image and gallery names |
 | `GET /api/assets/{id}/thumbnail?size=thumbnail\|preview\|fullsize` | The thumbnail (480 px), or the original for `preview` and `fullsize` |
 | `GET /api/assets/{id}/original` | The image's file |
-
-An image in several galleries is one asset.
 
 ## Develop
 
