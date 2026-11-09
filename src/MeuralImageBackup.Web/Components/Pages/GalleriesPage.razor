@@ -332,7 +332,12 @@ else
             Ui.Toast.Success("Everything on disk is listed already.");
         }
         if (result.Skipped > 0)
-            Ui.Toast.Info($"{Format.Count(result.Skipped, "file was", "files were")} skipped: not in a gallery folder, or the name matches several images. See the log.");
+        {
+            var reasons = new List<string>();
+            if (result.OutsideGallery > 0) reasons.Add($"{Format.Number(result.OutsideGallery)} outside a gallery folder");
+            if (result.SharedName > 0) reasons.Add($"{Format.Number(result.SharedName)} with a name several images share");
+            Ui.Toast.Info($"{Format.Count(result.Skipped, "file was", "files were")} skipped: {string.Join(", ", reasons)}. Loose files lists them.");
+        }
         await LoadAsync();
     }
 

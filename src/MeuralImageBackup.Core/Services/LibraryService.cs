@@ -72,10 +72,22 @@ public sealed record Duplicate(IReadOnlyList<ImageView> Views)
 // What removing duplicate copies did.
 public sealed record DedupeResult(int Images, int FilesDeleted, long BytesFreed);
 
-// What a sync with the uploads folder changed.
-public sealed record SyncResult(int GalleriesAdded, int ImagesAdded, int ImagesLinked, int Skipped)
+// What a sync with the uploads folder changed. Skipped counts the image files it couldn't place:
+// OutsideGallery of them aren't in a gallery folder, the rest have a name several images share.
+public sealed record SyncResult(int GalleriesAdded, int ImagesAdded, int ImagesLinked, int Skipped, int OutsideGallery = 0)
 {
     public bool Changed => GalleriesAdded + ImagesAdded + ImagesLinked > 0;
+    public int SharedName => Skipped - OutsideGallery;
+}
+
+// Why a file in the uploads folder is loose (see LibraryService.FindLooseFilesAsync).
+public enum LooseReason { OutsideGallery, SharedName, NotAnImage }
+
+// A file no image uses. Candidates names the images whose file name it has (SharedName only).
+public sealed record LooseFile(string RelativePath, LooseReason Reason, long Size, DateTime Time, IReadOnlyList<string> Candidates)
+{
+    public bool IsImage => Reason != LooseReason.NotAnImage;
+    public string Url => ImagePaths.Url(RelativePath);
 }
 
 public sealed class NotFoundException(string message) : Exception(message);
@@ -242,58 +254,50 @@ public sealed class LibraryService(IDbContextFactory<MeuralDb> dbFactory, ImageP
         return (files, bytes);
     }
 
-    // Merges an image whose file is identical to another's into that one: its files are deleted, the
-    // galleries it was in list the kept image instead (showing the kept image's copy), and its show
-    // counts are added to the kept image's. Its entry goes; if a frame shows it again, it's recorded
-    // and downloaded anew. Returns how many files were deleted and their size.
-    public async Task<(int Files, long Bytes)> MergeIntoAsync(int keepId, int removeId, CancellationToken ct = default)
+    // Removes an image whose file is identical to the kept image's: its files in all its galleries'
+    // folders and its entries. The kept image stays as it is. A file the kept image uses too (same
+    // title in the same folder) stays. If a frame shows the removed image again, it's recorded and
+    // downloaded anew. Returns how many files were deleted and their size.
+    public async Task<(int Files, long Bytes)> RemoveIdenticalAsync(int keepId, int removeId, CancellationToken ct = default)
     {
         if (keepId == removeId)
-            throw new InvalidOperationException("An image can't be merged into itself.");
+            throw new InvalidOperationException("The image to keep can't be removed.");
         await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var keep = await db.Images.FirstOrDefaultAsync(i => i.Id == keepId, ct)
+        var keep = await db.Images.AsNoTracking().FirstOrDefaultAsync(i => i.Id == keepId, ct)
             ?? throw new NotFoundException("The image to keep was deleted meanwhile.");
         var remove = await db.Images.FirstOrDefaultAsync(i => i.Id == removeId, ct)
-            ?? throw new NotFoundException("This image was merged or deleted already.");
+            ?? throw new NotFoundException("This image was removed already.");
 
-        var keepGalleries = await GalleriesOfAsync(db, keep, ct);
-        var keepFiles = keepGalleries.Select(g => paths.File(g.FrameName, g.Name, keep.Name, keep.FileId)).ToHashSet(StringComparer.Ordinal);
+        var keepFiles = (await GalleriesOfAsync(db, keep, ct))
+            .Select(g => paths.File(g.FrameName, g.Name, keep.Name, keep.FileId)).ToHashSet(StringComparer.Ordinal);
         if (!keepFiles.Any(f => paths.FullPath(f) is { } full && File.Exists(full)))
-            throw new InvalidOperationException($"The file of {keep.Name} isn't there any more, so nothing was merged.");
+            throw new InvalidOperationException($"The file of {keep.Name} isn't there any more, so nothing was removed.");
 
         var files = 0;
         var bytes = 0L;
-        var keepIds = keepGalleries.Select(g => g.Id).ToHashSet();
         foreach (var g in await GalleriesOfAsync(db, remove, ct))
         {
             var relative = paths.File(g.FrameName, g.Name, remove.Name, remove.FileId);
-            // The same path is the kept image's file too (same name in the same folder).
-            if (!keepFiles.Contains(relative) && paths.FullPath(relative) is { } full && File.Exists(full))
+            if (keepFiles.Contains(relative) || paths.FullPath(relative) is not { } full || !File.Exists(full))
+                continue;
+            var size = new FileInfo(full).Length;
+            if (DeleteQuietly(() => File.Delete(full), relative))
             {
-                var size = new FileInfo(full).Length;
-                if (DeleteQuietly(() => File.Delete(full), relative))
-                {
-                    files++;
-                    bytes += size;
-                }
+                files++;
+                bytes += size;
             }
-            if (keepIds.Add(g.Id))
-                db.GalleryImages.Add(new GalleryImage { GalleryId = g.Id, ImageId = keep.Id });
         }
 
-        keep.AccessCount += remove.AccessCount;
-        if (remove.LastAccessedAt > keep.LastAccessedAt) keep.LastAccessedAt = remove.LastAccessedAt;
-        if (remove.CreatedAt < keep.CreatedAt) keep.CreatedAt = remove.CreatedAt;
         await db.GalleryImages.Where(l => l.ImageId == remove.Id).ExecuteDeleteAsync(ct);
         db.Images.Remove(remove);
         await db.SaveChangesAsync(ct);
-        logger.LogInformation("Merged {Removed} (Meural id {RemovedId}) into {Kept} (Meural id {KeptId}): identical files, {Count} deleted",
+        logger.LogInformation("Removed {Removed} (Meural id {RemovedId}): identical to {Kept} (Meural id {KeptId}), {Count} files deleted",
             remove.Name, remove.FileId, keep.Name, keep.FileId, files);
         return (files, bytes);
     }
 
-    // Merges every group of identical files into its first image (the most shown).
-    public async Task<DedupeResult> MergeIdenticalAsync(IReadOnlyList<IdenticalFiles> groups, IProgress<string>? progress = null, CancellationToken ct = default)
+    // Keeps the first image (the most shown) of every group of identical files and removes the others.
+    public async Task<DedupeResult> RemoveIdenticalAsync(IReadOnlyList<IdenticalFiles> groups, IProgress<string>? progress = null, CancellationToken ct = default)
     {
         int images = 0, files = 0;
         var bytes = 0L;
@@ -306,14 +310,14 @@ public sealed class LibraryService(IDbContextFactory<MeuralDb> dbFactory, ImageP
             {
                 try
                 {
-                    var (f, b) = await MergeIntoAsync(group.Keeper.Id, other.Id, ct);
+                    var (f, b) = await RemoveIdenticalAsync(group.Keeper.Id, other.Id, ct);
                     images++;
                     files += f;
                     bytes += b;
                 }
                 catch (Exception ex) when (ex is NotFoundException or InvalidOperationException)
                 {
-                    logger.LogInformation("Didn't merge {Image}: {Reason}", other.Name, ex.Message);
+                    logger.LogInformation("Didn't remove {Image}: {Reason}", other.Name, ex.Message);
                 }
             }
         }
@@ -390,15 +394,56 @@ public sealed class LibraryService(IDbContextFactory<MeuralDb> dbFactory, ImageP
     // - an image file nobody recorded gets an entry (with the Meural id when the file is named after it).
     // Files are matched to images by the file name the image would be saved under. When several
     // recorded images could be the file and none is clearly it, the file is skipped.
-    public async Task<SyncResult> SyncWithDiskAsync(IProgress<string>? progress = null, CancellationToken ct = default)
+    public Task<SyncResult> SyncWithDiskAsync(IProgress<string>? progress = null, CancellationToken ct = default) =>
+        SyncAsync(apply: true, loose: null, progress, ct);
+
+    // The files in the uploads folder that no image uses and the sync can't place: image files
+    // outside a gallery folder, image files whose name several recorded images share, and files
+    // that aren't images (other types, empty files, unfinished downloads). Reads only.
+    public async Task<IReadOnlyList<LooseFile>> FindLooseFilesAsync(IProgress<string>? progress = null, CancellationToken ct = default)
+    {
+        var loose = new List<LooseFile>();
+        await SyncAsync(apply: false, loose, progress, ct);
+        var others = await Task.Run(() => EnumerateUploads(ct)
+            .Where(f => !f.Relative.EndsWith(ImagePaths.Extension, StringComparison.Ordinal) || f.Info.Length == 0)
+            .Select(f => new LooseFile(f.Relative, LooseReason.NotAnImage, f.Info.Length, f.Info.LastWriteTimeUtc, []))
+            .ToList(), ct);
+        return loose.Concat(others).OrderBy(f => f.Reason).ThenBy(f => f.RelativePath, StringComparer.CurrentCultureIgnoreCase).ToList();
+    }
+
+    // Deletes loose files: only those FindLooseFilesAsync lists right now, so a file an image uses is
+    // never deleted, whatever is asked. Folders left empty go too. Returns how many and their size.
+    public async Task<(int Files, long Bytes)> DeleteLooseFilesAsync(IEnumerable<string> relativePaths, CancellationToken ct = default)
+    {
+        var loose = (await FindLooseFilesAsync(null, ct)).ToDictionary(f => f.RelativePath, StringComparer.Ordinal);
+        var files = 0;
+        var bytes = 0L;
+        foreach (var relative in relativePaths.Distinct(StringComparer.Ordinal))
+        {
+            ct.ThrowIfCancellationRequested();
+            if (!loose.TryGetValue(relative, out var file) || paths.FullPath(relative) is not { } full || !File.Exists(full))
+                continue;
+            if (!DeleteQuietly(() => File.Delete(full), relative))
+                continue;
+            files++;
+            bytes += file.Size;
+            logger.LogInformation("Deleted the loose file {File} ({Reason})", relative, file.Reason);
+            DeleteEmptyFolders(Path.GetDirectoryName(full));
+        }
+        return (files, bytes);
+    }
+
+    // The sync's work. With apply false nothing is written: new galleries and images get temporary
+    // ids, so the matching runs exactly as it would, and the skipped files are collected in loose.
+    private async Task<SyncResult> SyncAsync(bool apply, List<LooseFile>? loose, IProgress<string>? progress, CancellationToken ct)
     {
         progress?.Report("Reading the uploads folder");
         var files = await Task.Run(() => ScanFileDetails(progress, ct), ct);
 
         await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var galleries = await db.Galleries.ToListAsync(ct);
-        var images = await db.Images.ToListAsync(ct);
-        var links = await db.GalleryImages.ToListAsync(ct);
+        var galleries = await db.Galleries.AsNoTracking().ToListAsync(ct);
+        var images = await db.Images.AsNoTracking().ToListAsync(ct);
+        var links = await db.GalleryImages.AsNoTracking().ToListAsync(ct);
 
         var members = new HashSet<(int Gallery, int Image)>(images.Select(i => (i.GalleryId, i.Id)).Concat(links.Select(l => (l.GalleryId, l.ImageId))));
         var byFolder = galleries.GroupBy(g => paths.Folder(g.FrameName, g.Name), StringComparer.Ordinal)
@@ -408,7 +453,19 @@ public sealed class LibraryService(IDbContextFactory<MeuralDb> dbFactory, ImageP
         var byFileId = images.Where(i => i.FileId != 0).GroupBy(i => i.FileId).ToDictionary(x => x.Key, x => x.First());
         var homeOf = galleries.ToDictionary(g => g.Id);
 
-        int galleriesAdded = 0, imagesAdded = 0, imagesLinked = 0, skipped = 0;
+        var tempId = -1;
+        async Task AddAsync<T>(T entity, Action<int> setId) where T : class
+        {
+            if (!apply)
+            {
+                setId(tempId--);
+                return;
+            }
+            db.Add(entity);
+            await db.SaveChangesAsync(ct);
+        }
+
+        int galleriesAdded = 0, imagesAdded = 0, imagesLinked = 0, outside = 0, shared = 0;
         var depth = paths.UseFrameFolder ? 3 : 2;
 
         var folders = files.GroupBy(f => f.Folder, StringComparer.Ordinal).ToList();
@@ -420,7 +477,13 @@ public sealed class LibraryService(IDbContextFactory<MeuralDb> dbFactory, ImageP
             var parts = folderFiles.Key.Split('/');
             if (folderFiles.Key.Length == 0 || parts.Length != depth - 1)
             {
-                skipped += folderFiles.Count();
+                foreach (var file in folderFiles)
+                {
+                    outside++;
+                    loose?.Add(new LooseFile(file.Relative, LooseReason.OutsideGallery, file.Size, file.Time, []));
+                    if (apply)
+                        logger.LogInformation("Sync skipped {File}: not in a gallery folder", file.Relative);
+                }
                 continue;
             }
 
@@ -435,8 +498,7 @@ public sealed class LibraryService(IDbContextFactory<MeuralDb> dbFactory, ImageP
                     LastAccessedAt = times.Max(),
                     AccessCount = 0,
                 };
-                db.Galleries.Add(gallery);
-                await db.SaveChangesAsync(ct);
+                await AddAsync(gallery, id => gallery.Id = id);
                 homeOf[gallery.Id] = gallery;
                 owners = [gallery];
                 byFolder[folderFiles.Key] = owners;
@@ -466,8 +528,7 @@ public sealed class LibraryService(IDbContextFactory<MeuralDb> dbFactory, ImageP
                         LastAccessedAt = file.Time,
                         AccessCount = 0,
                     };
-                    db.Images.Add(image);
-                    await db.SaveChangesAsync(ct);
+                    await AddAsync(image, id => image.Id = id);
                     members.Add((target.Id, image.Id));
                     // The same file in another gallery's folder is this image too.
                     if (named is null)
@@ -486,21 +547,43 @@ public sealed class LibraryService(IDbContextFactory<MeuralDb> dbFactory, ImageP
                     : null;
                 if (match is null)
                 {
-                    logger.LogInformation("Sync skipped {File}: {Count} recorded images have that name", file.Relative, candidates.Count);
-                    skipped++;
+                    shared++;
+                    loose?.Add(new LooseFile(file.Relative, LooseReason.SharedName, file.Size, file.Time,
+                        candidates.Select(c => homeOf.TryGetValue(c.GalleryId, out var home) ? $"{c.Name} ({home.Name}, {home.FrameName})" : c.Name).ToList()));
+                    if (apply)
+                        logger.LogInformation("Sync skipped {File}: {Count} recorded images have that name", file.Relative, candidates.Count);
                     continue;
                 }
-                db.GalleryImages.Add(new GalleryImage { GalleryId = target.Id, ImageId = match.Id });
+                if (apply)
+                    db.GalleryImages.Add(new GalleryImage { GalleryId = target.Id, ImageId = match.Id });
                 members.Add((target.Id, match.Id));
                 imagesLinked++;
             }
         }
-        await db.SaveChangesAsync(ct);
+        var result = new SyncResult(galleriesAdded, imagesAdded, imagesLinked, outside + shared, outside);
+        if (!apply)
+            return result;
 
-        var result = new SyncResult(galleriesAdded, imagesAdded, imagesLinked, skipped);
-        logger.LogInformation("Synced with the uploads folder: {Galleries} galleries added, {Images} images added, {Linked} linked, {Skipped} files skipped",
-            galleriesAdded, imagesAdded, imagesLinked, skipped);
+        await db.SaveChangesAsync(ct);
+        logger.LogInformation("Synced with the uploads folder: {Galleries} galleries added, {Images} images added, {Linked} linked, {Outside} files outside gallery folders and {Shared} with a name several images share skipped",
+            galleriesAdded, imagesAdded, imagesLinked, outside, shared);
         return result;
+    }
+
+    // Removes empty folders from the given one up, never the uploads folder itself.
+    private void DeleteEmptyFolders(string? folder)
+    {
+        var root = Path.GetFullPath(paths.UploadsRoot).TrimEnd(Path.DirectorySeparatorChar);
+        while (folder is not null)
+        {
+            var full = Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar);
+            if (full.Length <= root.Length || !full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal) ||
+                !Directory.Exists(full) || Directory.EnumerateFileSystemEntries(full).Any())
+                return;
+            if (!DeleteQuietly(() => Directory.Delete(full), full))
+                return;
+            folder = Path.GetDirectoryName(full);
+        }
     }
 
     // An image leaves a gallery: a link goes; leaving its own gallery, it moves to another one it's in,
@@ -569,7 +652,7 @@ public sealed class LibraryService(IDbContextFactory<MeuralDb> dbFactory, ImageP
     private sealed record FileInfoLite(long Size, long Version);
 
     // An image file for the sync: its folder ("frame/gallery"), name without ".jpeg" and time (UTC).
-    private sealed record DiskFile(string Relative, string Folder, string Name, DateTime Time);
+    private sealed record DiskFile(string Relative, string Folder, string Name, DateTime Time, long Size);
 
     // Every file under uploads/, by its relative path with "/". Linux names are case-sensitive, so
     // the lookup is too.
@@ -589,7 +672,7 @@ public sealed class LibraryService(IDbContextFactory<MeuralDb> dbFactory, ImageP
             var slash = f.Relative.LastIndexOf('/');
             var folder = slash < 0 ? "" : f.Relative[..slash];
             var name = f.Relative[(slash + 1)..^ImagePaths.Extension.Length];
-            found.Add(new DiskFile(f.Relative, folder, name, f.Info.LastWriteTimeUtc));
+            found.Add(new DiskFile(f.Relative, folder, name, f.Info.LastWriteTimeUtc, f.Info.Length));
         }
         return found;
     }

@@ -70,9 +70,9 @@ public class UploadTests
         var image = await ctx.Images.Include(i => i.Gallery).SingleAsync();
         Assert.Equal(3, image.AccessCount);
         Assert.Equal("A", image.Gallery!.Name);
-        // Downloaded once into A, once into B (the file is per gallery folder), not again for A.
-        Assert.Equal(2, server.Requests);
-        Assert.True(File.Exists(storage.Upload("Living room/B/Image 1.jpeg")));
+        // Downloaded once, into A: B lists it and shows A's copy (each image is stored once).
+        Assert.Equal(1, server.Requests);
+        Assert.False(File.Exists(storage.Upload("Living room/B/Image 1.jpeg")));
     }
 
     [Fact]

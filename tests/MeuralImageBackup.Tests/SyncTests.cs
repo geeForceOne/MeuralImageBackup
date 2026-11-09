@@ -69,7 +69,7 @@ public class SyncTests
         var result = await library.SyncWithDiskAsync();
 
         // Pic [1] in the second frame's folder is the same file name, so the same image, linked.
-        Assert.Equal(new SyncResult(2, 2, 1, 1), result);
+        Assert.Equal(new SyncResult(2, 2, 1, 1, OutsideGallery: 1), result);
         await using var ctx = db.CreateDbContext();
         Assert.Equal(1234, (await ctx.Images.SingleAsync(i => i.Name == "1234")).FileId);
         var loaded = await library.LoadAsync();

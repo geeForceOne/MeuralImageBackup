@@ -1,7 +1,6 @@
 @page "/settings"
 @inherits AppPage
 @inject ApiTokenService Tokens
-@inject UploadOptions UploadOptions
 @inject StoragePaths Storage
 @inject MeuralImageBackup.Core.Files.ImagePaths ImagePaths
 @inject IJSRuntime JS
@@ -19,9 +18,8 @@
     <div class="settings-head">
         <h2 id="api-title"><Icon Name="key" Size="18" />MeuralManager access</h2>
         <p>
-            MeuralManager can browse this backup's images by date or gallery and put them into Meural playlists,
-            as a photo source next to Immich. It reads them through an API that needs a token. The API only reads;
-            nothing can be changed or deleted through it.
+            MeuralManager can browse this backup's images by date or gallery and put them into Meural playlists.
+            It reads them through an API that needs a token. The API only reads; nothing can be changed or deleted through it.
         </p>
     </div>
 
@@ -86,9 +84,7 @@
 
         <details class="settings-more">
             <summary>What the API offers</summary>
-            <p>
-                The same calls as Immich's API, for the parts MeuralManager uses, with the token in an <code>X-API-Key</code> header:
-            </p>
+            <p>Every call sends the token in an <code>X-API-Key</code> header.</p>
             <ul>
                 <li><code>GET /api/albums</code>: the galleries, each with its images.</li>
                 <li><code>POST /api/search/metadata</code>: images, newest first, by date and gallery, in pages. The date is when the backup first saved the image.</li>
@@ -96,7 +92,6 @@
                 <li><code>GET /api/assets/{id}/thumbnail</code> and <code>/original</code>: the image's thumbnail and its file.</li>
                 <li><code>GET /api/users/me</code>: a connection test.</li>
             </ul>
-            <p>Immich's people, faces and AI search aren't available.</p>
         </details>
     }
 </section>
@@ -110,10 +105,6 @@
         <div>
             <dt><code>USE_FRAME_NAME_IN_PATH</code></dt>
             <dd>@(ImagePaths.UseFrameFolder ? "On: images are saved as <frame>/<gallery>/<title>.jpeg" : "Off: images are saved as <gallery>/<title>.jpeg")</dd>
-        </div>
-        <div>
-            <dt><code>SKIP_DUPLICATE_DOWNLOADS</code></dt>
-            <dd>@(UploadOptions.SkipStoredImages ? "On: an image is stored once, in the first gallery that showed it" : "Off: every gallery that shows an image gets its own copy")</dd>
         </div>
         <div>
             <dt>Images</dt>

@@ -1,6 +1,5 @@
 @page "/duplicates"
 @inherits AppPage
-@inject UploadOptions UploadOptions
 @inject IdenticalFilesService IdenticalFilesService
 
 <PageTitle>Duplicates · @AppInfo.Name</PageTitle>
@@ -45,12 +44,12 @@
             </button>
         </div>
     }
-    else if (FilesTab && _identicalShown.Count > 0)
+    else if (FilesTab && _finding is null && _identical is { Count: > 0 } all && _identicalShown.Count > 0)
     {
         <div class="page-actions">
-            <button type="button" class="btn btn-primary" disabled="@Busy" @onclick="MergeAllAsync"
+            <button type="button" class="btn btn-primary" disabled="@Busy" @onclick="KeepOneOfEachIdenticalAsync"
                     title="Each group keeps its most shown image">
-                <Icon Name="broom" Size="16" />@(_identicalShown.Count == _identical!.Count ? "Merge all" : $"Merge these {Format.Number(_identicalShown.Count)}")
+                <Icon Name="broom" Size="16" />@(_identicalShown.Count == all.Count ? "Keep one of each" : $"Keep one of these {Format.Number(_identicalShown.Count)}")
             </button>
         </div>
     }
@@ -79,7 +78,7 @@
     }
     else
     {
-        <text>One image, saved again in each gallery folder it was shown from.</text>
+        <text>One image, saved again in each gallery folder it was shown from (before 2.3.1, each gallery got its own copy).</text>
     }
 </p>
 
@@ -97,13 +96,6 @@ else if (_library.Duplicates.Count == 0)
         <BrandMark Size="64" PlayOnLoad="true" />
         <h2>No duplicates</h2>
         <p>Every image is stored in one gallery's folder only.</p>
-        @if (!UploadOptions.SkipStoredImages)
-        {
-            <p class="small">
-                When a frame shows an image from another gallery, it's saved into that gallery's folder too.
-                To store each image only once, set <code>SKIP_DUPLICATE_DOWNLOADS=true</code> on the container.
-            </p>
-        }
     </div>
 }
 else
@@ -112,10 +104,7 @@ else
         <Icon Name="info" />
         <span>
             Removing a copy deletes only that file. The image stays listed in all its galleries, which show the copy that's left.
-            @if (!UploadOptions.SkipStoredImages)
-            {
-                <text> If a frame shows it again from one of those galleries, it's downloaded again, unless <code>SKIP_DUPLICATE_DOWNLOADS=true</code> is set.</text>
-            }
+            New images are stored once already; these copies are from before.
         </span>
     </div>
 
@@ -347,8 +336,8 @@ else
             <div class="notice notice-row">
                 <Icon Name="info" />
                 <span>
-                    Keeping one image merges the others into it: their files are deleted, their galleries list the kept image instead,
-                    and their show counts are added to it. If a frame shows one of the merged images again, it's saved again as its own image.
+                    Keeping one image removes the others: their files and their entries in their galleries. The kept image stays as it is.
+                    If a frame shows a removed image again, it's saved again.
                 </span>
             </div>
 
@@ -375,9 +364,16 @@ else
                             </button>
                             <div class="dupe-body">
                                 <div class="dupe-head">
-                                    <h2 class="dupe-name">@($"{Format.Count(g.Images.Count, "image", "images")} with the same file")</h2>
+                                    <h2 class="dupe-name">@(g.SharedFile ? $"{Format.Count(g.Images.Count, "image shares", "images share")} one file" : $"{Format.Count(g.Images.Count, "image", "images")} with the same file")</h2>
                                     <span class="dupe-meta">
-                                        <span>@($"{Format.Size(g.Size)} each, {Format.Size(g.Wasted)} extra")</span>
+                                        @if (g.SharedFile)
+                                        {
+                                            <span title="Same title in the same gallery, so one file on disk: removing the others frees no space">@($"{Format.Size(g.Size)}, stored once")</span>
+                                        }
+                                        else
+                                        {
+                                            <span>@($"{Format.Count(g.Files, "file", "files")} of {Format.Size(g.Size)}, {Format.Size(g.Wasted)} extra")</span>
+                                        }
                                     </span>
                                 </div>
                                 <ul class="dupe-copies">
@@ -390,7 +386,7 @@ else
                                                     @i.Name
                                                     @if (i == g.Keeper)
                                                     {
-                                                        <span class="tag" title="&quot;Merge all&quot; keeps the most shown image">Most shown</span>
+                                                        <span class="tag" title="&quot;Keep one of each&quot; keeps the most shown image">Most shown</span>
                                                     }
                                                 </span>
                                                 <span class="dupe-sub">
@@ -408,7 +404,7 @@ else
                                                 </span>
                                             </span>
                                             <button type="button" class="btn btn-secondary btn-sm" disabled="@Busy" @onclick="() => KeepImageAsync(group, image)"
-                                                    title="Merges the other images into this one">
+                                                    title="Removes the other images of this group">
                                                 <Icon Name="check" Size="15" />Keep this one
                                             </button>
                                         </li>
@@ -456,46 +452,44 @@ else
             Ui.Toast.Success($"Deleted {Format.Count(result.FilesDeleted, "extra copy", "extra copies")} of {Format.Count(result.Images, "image", "images")} ({Format.Size(result.BytesFreed)}).");
     }
 
-    // Identical files: merges the group's other images into the chosen one.
+    // Identical files: keeps the chosen image and removes the group's others, right away (no
+    // confirmation, the user's choice: the kept image and its file stay).
     private async Task KeepImageAsync(IdenticalFiles group, IdenticalImage keep)
     {
         var others = group.Images.Where(i => i.Id != keep.Id).ToList();
-        var ok = await Ui.Confirm.AskAsync(
-            $"Keep {keep.Name}?",
-            $"This merges {string.Join(", ", others.Select(o => o.Name))} into it and deletes {Format.Count(others.Sum(o => o.Copies.Count), "file", "files")} ({Format.Size(others.Sum(o => o.Copies.Count) * group.Size)}). Their galleries list {keep.Name} instead. It can't be undone.",
-            "Merge", danger: true);
-        if (!ok) return;
         var files = 0;
         var bytes = 0L;
         if (await RunAsync(async () =>
             {
                 foreach (var other in others)
                 {
-                    var (f, b) = await LibraryService.MergeIntoAsync(keep.Id, other.Id, PageToken);
+                    var (f, b) = await LibraryService.RemoveIdenticalAsync(keep.Id, other.Id, PageToken);
                     files += f;
                     bytes += b;
                 }
             }))
         {
-            Ui.Toast.Success($"Merged {Format.Count(others.Count, "image", "images")} into {keep.Name}, deleted {Format.Count(files, "file", "files")} ({Format.Size(bytes)}).");
+            Ui.Toast.Success(files == 0
+                ? $"Kept {keep.Name}, removed {Format.Count(others.Count, "image", "images")}; they shared its file."
+                : $"Kept {keep.Name}, removed {Format.Count(others.Count, "image", "images")} and {Format.Count(files, "file", "files")} ({Format.Size(bytes)}).");
         }
         await ReloadAsync();
     }
 
-    private async Task MergeAllAsync()
+    private async Task KeepOneOfEachIdenticalAsync()
     {
         var groups = _identicalShown.ToList();
         var images = groups.Sum(g => g.Images.Count - 1);
         var ok = await Ui.Confirm.AskAsync(
-            $"Merge {Format.Count(images, "image", "images")}?",
-            $"Each of the {Format.Count(groups.Count, "group", "groups")} keeps its most shown image; the others are merged into it and their files deleted ({Format.Size(groups.Sum(g => g.Wasted))}). Their galleries list the kept image instead. It can't be undone.",
-            "Merge", danger: true);
+            $"Remove {Format.Count(images, "image", "images")}?",
+            $"Each of the {Format.Count(groups.Count, "group", "groups")} keeps its most shown image; the others are removed with their files ({Format.Size(groups.Sum(g => g.Wasted))}). It can't be undone.",
+            "Remove", danger: true);
         if (!ok) return;
 
-        var result = await RunBulkAsync("Merging identical files…", (progress, ct) => LibraryService.MergeIdenticalAsync(groups, progress, ct),
-            "Stopped. The images merged until then stay merged; the rest are as they were.");
+        var result = await RunBulkAsync("Removing identical files…", (progress, ct) => LibraryService.RemoveIdenticalAsync(groups, progress, ct),
+            "Stopped. The images removed until then are gone; the rest are as they were.");
         if (result is not null)
-            Ui.Toast.Success($"Merged {Format.Count(result.Images, "image", "images")}, deleted {Format.Count(result.FilesDeleted, "file", "files")} ({Format.Size(result.BytesFreed)}).");
+            Ui.Toast.Success($"Removed {Format.Count(result.Images, "image", "images")} and {Format.Count(result.FilesDeleted, "file", "files")} ({Format.Size(result.BytesFreed)}).");
     }
 
     // Runs a long action with its progress in the page head and a Cancel button, then reloads.
@@ -538,7 +532,7 @@ else
         }
         catch (OperationCanceledException)
         {
-            _identical = null;
+            ClearIdentical();
         }
         finally
         {
@@ -551,7 +545,7 @@ else
     private async Task RecompareAsync()
     {
         await LoadAsync();
-        _identical = null;
+        ClearIdentical();
         await FindIdenticalAsync();
     }
 
@@ -560,15 +554,16 @@ else
     private async Task ReloadAsync()
     {
         await LoadAsync();
+        ClearIdentical();
         if (FilesTab)
-        {
-            _identical = null;
             await FindIdenticalAsync();
-        }
-        else
-        {
-            _identical = null;
-        }
+    }
+
+    // Forgets the comparison. The visible groups go with it, so nothing renders a list that's gone.
+    private void ClearIdentical()
+    {
+        _identical = null;
+        _identicalShown = [];
     }
 
     // Progress<T> reports on the circuit's context; redraw at most a few times a second.

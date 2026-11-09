@@ -9,22 +9,14 @@ namespace MeuralImageBackup.Core.Services;
 // What Home Assistant posts to /api/meural when a frame shows an image. All optional, as before.
 public sealed record MeuralUpload(string? FrameName, string? Title, string? Gallery, string? Url, int? Id);
 
-// SkipStoredImages (SKIP_DUPLICATE_DOWNLOADS=true): an image that's stored in another gallery's
-// folder already isn't downloaded again into the gallery that shows it now; that gallery lists it
-// and shows the stored copy. Off by default, so the folders keep the old layout (every gallery's
-// folder has all its images).
-public sealed record UploadOptions(bool SkipStoredImages = false)
-{
-    // Only "true" (any casing) turns it on.
-    public static bool ParseSkipStoredImages(string? value) => bool.TryParse(value, out var skip) && skip;
-}
-
 // Records a shown image and keeps a copy of it: MeuralImageUploader's /api/meural, with the same
 // counting and file layout. Uploads are handled one at a time, so two frames reporting at once
 // can't count a gallery twice.
-public sealed class UploadService(IDbContextFactory<MeuralDb> dbFactory, ImagePaths paths, HttpClient http, ILogger<UploadService> logger, UploadOptions? options = null)
+// Each image is stored once (since 2.3.1; before, optional): when a frame shows an image from
+// another gallery and its file is in one of its galleries' folders already, it isn't downloaded
+// again; the new gallery lists it and shows the stored copy.
+public sealed class UploadService(IDbContextFactory<MeuralDb> dbFactory, ImagePaths paths, HttpClient http, ILogger<UploadService> logger)
 {
-    private readonly UploadOptions _options = options ?? new UploadOptions();
 
     private static readonly SemaphoreSlim Gate = new(1, 1);
 
@@ -148,7 +140,7 @@ public sealed class UploadService(IDbContextFactory<MeuralDb> dbFactory, ImagePa
         }
         if (File.Exists(path))
             return;
-        if (_options.SkipStoredImages && upload.FrameName is not null && upload.Id is { } fileId &&
+        if (upload.FrameName is not null && upload.Id is { } fileId &&
             await StoredCopyAsync(fileId, ct) is { } stored)
         {
             logger.LogInformation("Not saving {File}: the image is stored as {Stored} already", relative, stored);
