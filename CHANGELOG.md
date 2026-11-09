@@ -1,5 +1,24 @@
 # Release notes
 
+## 2.4.0 - 2026-11-09
+
+### New
+
+- **Loose files** page: files in the uploads folder that no image uses (outside a gallery folder, a name several images share, or not an image), with a delete per file or per group.
+
+### Changed
+
+- Each image is stored once: when a frame shows it from another gallery, it isn't downloaded again. The `SKIP_DUPLICATE_DOWNLOADS` setting is gone; a leftover one is ignored.
+- **Keep this one** for identical files keeps that image as it is and removes the others, right away, without asking. Nothing is merged any more; **Keep one of each** does the whole list.
+
+### Improved
+
+- Sync with disk says why files were skipped (outside a gallery folder, or a name several images share), and the log names each one.
+
+### Fixed
+
+- Minor fixes and updates.
+
 ## 2.3.0 - 2026-11-09
 
 ### New

@@ -826,6 +826,21 @@ a.stat:hover { border-color: var(--rule-strong); text-decoration: none; backgrou
 .dupe-finding .busy-detail { white-space: normal; }
 .result-count .link-button { margin-left: 10px; }
 
+/* ---------- Loose files ---------- */
+
+.loose-section { margin-bottom: 26px; }
+.loose-section .section-head { margin-top: 8px; align-items: flex-start; }
+.loose-section h2 { margin: 0; font-size: var(--t-lg); }
+.loose-help { margin: 4px 0 0; max-width: 80ch; }
+.loose-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--rule); border-radius: var(--r-lg); background: var(--sheet); overflow: hidden; }
+.loose-file { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 8px 10px; border-bottom: 1px solid var(--rule); }
+.loose-file:last-child { border-bottom: 0; }
+.loose-thumb { display: grid; place-items: center; width: 56px; height: 56px; overflow: hidden; border-radius: var(--r-md); background: var(--sheet-3); color: var(--pencil); }
+.loose-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.loose-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.loose-path { font-size: var(--t-sm); overflow-wrap: anywhere; }
+.loose-meta { display: flex; flex-wrap: wrap; gap: 0 12px; color: var(--pencil); font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
+
 /* ---------- Settings ---------- */
 
 .side-version.active { background: var(--accent-soft); color: var(--accent); }
@@ -915,7 +930,7 @@ a.stat:hover { border-color: var(--rule-strong); text-decoration: none; backgrou
         bottom: 0;
         z-index: 30;
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(5, 1fr);
         height: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
         padding-bottom: env(safe-area-inset-bottom, 0px);
         background: var(--sheet);

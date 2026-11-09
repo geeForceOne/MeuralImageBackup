@@ -8,10 +8,9 @@ namespace MeuralImageBackup.Core;
 
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddMeuralCore(this IServiceCollection services, StoragePaths storage, bool useFrameFolder, bool skipStoredImages = false)
+    public static IServiceCollection AddMeuralCore(this IServiceCollection services, StoragePaths storage, bool useFrameFolder)
     {
         services.AddSingleton(storage);
-        services.AddSingleton(new UploadOptions(skipStoredImages));
         services.AddSingleton(new ImagePaths(storage, useFrameFolder));
         services.AddDbContextFactory<MeuralDb>(o => o.UseSqlite(storage.ConnectionString));
         services.AddSingleton<LibraryService>();

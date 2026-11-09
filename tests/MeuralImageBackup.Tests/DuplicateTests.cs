@@ -5,11 +5,11 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace MeuralImageBackup.Tests;
 
 // Images stored in more than one gallery's folder: finding them, keeping one copy, deletes that
-// don't lose the last copy, and SKIP_DUPLICATE_DOWNLOADS.
+// don't lose the last copy, and storing each image once.
 public class DuplicateTests
 {
-    private static UploadService Uploads(TestStorage storage, DbFactory db, FakeImageServer server, bool skip = false) =>
-        new(db, storage.ImagePaths(), new HttpClient(server), NullLogger<UploadService>.Instance, new UploadOptions(skip));
+    private static UploadService Uploads(TestStorage storage, DbFactory db, FakeImageServer server) =>
+        new(db, storage.ImagePaths(), new HttpClient(server), NullLogger<UploadService>.Instance);
 
     private static LibraryService Library(TestStorage storage, DbFactory db) =>
         new(db, storage.ImagePaths(), NullLogger<LibraryService>.Instance);
@@ -17,7 +17,8 @@ public class DuplicateTests
     private static MeuralUpload Shown(string gallery, int id) =>
         new("Living room", $"Image {id}", gallery, $"https://images.example/{id}.jpg", id);
 
-    // Image 1 shown in A, then in B and C: three copies, A is its own gallery.
+    // Image 1 shown in A, then in B and C, with a copy in each folder (as versions before 2.3.1
+    // saved it), A is its own gallery; image 2 in A.
     private static async Task<(DbFactory Db, LibraryService Library)> ThreeCopiesAsync(TestStorage storage)
     {
         var db = await storage.MigratedDbAsync();
@@ -26,6 +27,8 @@ public class DuplicateTests
         await uploads.HandleAsync(Shown("B", 1));
         await uploads.HandleAsync(Shown("C", 1));
         await uploads.HandleAsync(Shown("A", 2));
+        storage.WriteUpload("Living room/B/Image 1.jpeg", "jpeg-bytes");
+        storage.WriteUpload("Living room/C/Image 1.jpeg", "jpeg-bytes");
         return (db, Library(storage, db));
     }
 
@@ -136,12 +139,12 @@ public class DuplicateTests
     }
 
     [Fact]
-    public async Task WithSkipDuplicateDownloadsAStoredImageIsNotDownloadedAgain()
+    public async Task AStoredImageIsNotDownloadedAgainForAnotherGallery()
     {
         using var storage = new TestStorage();
         var db = await storage.MigratedDbAsync();
         var server = new FakeImageServer();
-        var uploads = Uploads(storage, db, server, skip: true);
+        var uploads = Uploads(storage, db, server);
 
         await uploads.HandleAsync(Shown("A", 1));
         await uploads.HandleAsync(Shown("B", 1));
@@ -155,12 +158,12 @@ public class DuplicateTests
     }
 
     [Fact]
-    public async Task WithSkipDuplicateDownloadsAnImageWhoseFileIsGoneIsDownloaded()
+    public async Task AnImageWhoseFileIsGoneIsDownloadedAgain()
     {
         using var storage = new TestStorage();
         var db = await storage.MigratedDbAsync();
         var server = new FakeImageServer();
-        var uploads = Uploads(storage, db, server, skip: true);
+        var uploads = Uploads(storage, db, server);
         await uploads.HandleAsync(Shown("A", 1));
         File.Delete(storage.Upload("Living room/A/Image 1.jpeg"));
 
@@ -171,16 +174,6 @@ public class DuplicateTests
         await using var ctx = db.CreateDbContext();
         Assert.Equal(1, await ctx.GalleryImages.CountAsync());
     }
-
-    [Theory]
-    [InlineData(null, false)]
-    [InlineData("", false)]
-    [InlineData("yes", false)]
-    [InlineData("false", false)]
-    [InlineData("true", true)]
-    [InlineData("TRUE", true)]
-    public void SkipDuplicateDownloadsIsOffUnlessTrue(string? value, bool expected) =>
-        Assert.Equal(expected, UploadOptions.ParseSkipStoredImages(value));
 
     private static IdenticalFilesService Identical(TestStorage storage) => new(storage.ImagePaths());
 
@@ -216,7 +209,7 @@ public class DuplicateTests
     }
 
     [Fact]
-    public async Task MergingMovesTheGalleriesAndCountsToTheKeptImage()
+    public async Task KeepingOneRemovesTheOthersAndLeavesTheKeptImageAsItIs()
     {
         using var storage = new TestStorage();
         var db = await storage.MigratedDbAsync();
@@ -227,37 +220,59 @@ public class DuplicateTests
         var library = Library(storage, db);
         var group = Assert.Single(await Identical(storage).FindAsync(await library.LoadAsync()));
 
-        var (files, bytes) = await library.MergeIntoAsync(group.Keeper.Id, group.Images[1].Id);
+        var (files, bytes) = await library.RemoveIdenticalAsync(group.Keeper.Id, group.Images[1].Id);
 
         Assert.Equal((1, (long)"jpeg-bytes".Length), (files, bytes));
         Assert.False(File.Exists(storage.Upload("Living room/D/Image 2.jpeg")));
         Assert.True(File.Exists(storage.Upload("Living room/A/Image 1.jpeg")));
         var loaded = await library.LoadAsync();
         Assert.DoesNotContain(loaded.Images, i => i.Name == "Image 2");
-        // D now lists image 1, showing A's copy, and the show counts add up.
-        var inD = loaded.Galleries.Single(g => g.Name == "D").Images.Single();
-        Assert.Equal(("Image 1", "A", 3), (inD.Name, inD.StoredInGalleryName, inD.AccessCount));
+        // Not a merge: D doesn't list image 1, and its count is its own.
+        Assert.Empty(loaded.Galleries.Single(g => g.Name == "D").Images);
+        var kept = Assert.Single(loaded.Images);
+        Assert.Equal(("Image 1", "A", 2), (kept.Name, kept.GalleryName, kept.AccessCount));
         Assert.Empty(await Identical(storage).FindAsync(loaded));
     }
 
     [Fact]
-    public async Task MergingAllKeepsTheMostShownImageOfEachGroup()
+    public async Task ImagesSharingOneFileAreGroupedAndKeepingOneDeletesNoFile()
+    {
+        using var storage = new TestStorage();
+        var db = await storage.MigratedDbAsync();
+        var uploads = Uploads(storage, db, new FakeImageServer());
+        // Two Meural ids, same title, same gallery: one file.
+        await uploads.HandleAsync(new MeuralUpload("Living room", "Basilica", "A", "https://x/1.jpg", 1));
+        await uploads.HandleAsync(new MeuralUpload("Living room", "Basilica", "A", "https://x/2.jpg", 2));
+        var library = Library(storage, db);
+        var group = Assert.Single(await Identical(storage).FindAsync(await library.LoadAsync()));
+        Assert.True(group.SharedFile);
+        Assert.Equal(0, group.Wasted);
+
+        var (files, _) = await library.RemoveIdenticalAsync(group.Keeper.Id, group.Images[1].Id);
+
+        Assert.Equal(0, files);
+        Assert.True(File.Exists(storage.Upload("Living room/A/Basilica.jpeg")));
+        Assert.True(Assert.Single((await library.LoadAsync()).Images).Exists);
+    }
+
+    [Fact]
+    public async Task KeepingOneOfEachKeepsTheMostShownImageOfEachGroup()
     {
         using var storage = new TestStorage();
         var (db, library) = await ThreeCopiesAsync(storage);
         var groups = await Identical(storage).FindAsync(await library.LoadAsync());
 
-        var result = await library.MergeIdenticalAsync(groups);
+        var result = await library.RemoveIdenticalAsync(groups);
 
         Assert.Equal(new DedupeResult(1, 1, "jpeg-bytes".Length), result);
         await using var ctx = db.CreateDbContext();
         var image = await ctx.Images.SingleAsync();
-        Assert.Equal(("Image 1", 4), (image.Name, image.AccessCount));
+        Assert.Equal(("Image 1", 3), (image.Name, image.AccessCount));
         Assert.False(File.Exists(storage.Upload("Living room/A/Image 2.jpeg")));
     }
 
     [Fact]
-    public async Task NothingIsMergedWhenTheKeptFileIsGone()
+    public async Task NothingIsRemovedWhenTheKeptFileIsGone()
     {
         using var storage = new TestStorage();
         var db = await storage.MigratedDbAsync();
@@ -269,7 +284,7 @@ public class DuplicateTests
         foreach (var copy in group.Keeper.Copies)
             File.Delete(storage.Upload(copy.RelativePath));
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => library.MergeIntoAsync(group.Keeper.Id, group.Images[1].Id));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => library.RemoveIdenticalAsync(group.Keeper.Id, group.Images[1].Id));
 
         Assert.True(File.Exists(storage.Upload(group.Images[1].Copies[0].RelativePath)));
     }

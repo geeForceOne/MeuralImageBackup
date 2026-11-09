@@ -1,0 +1,185 @@
+@page "/files"
+@inherits AppPage
+@inject MeuralImageBackup.Core.Files.ImagePaths ImagePaths
+
+<PageTitle>Loose files · @AppInfo.Name</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1>Loose files</h1>
+        @if (_files is { Count: > 0 })
+        {
+            <p class="page-sub">
+                <span>@($"{Format.Count(_files.Count, "file", "files")} in the uploads folder that no image uses")</span>
+                <span>@Format.Size(_files.Sum(f => f.Size))</span>
+            </p>
+        }
+    </div>
+    @if (_files is not null && _scanning is null)
+    {
+        <div class="page-actions">
+            <button type="button" class="btn btn-ghost" disabled="@Busy" @onclick="ScanAsync"><Icon Name="sync" Size="16" />Look again</button>
+        </div>
+    }
+</div>
+
+@if (_scanning is not null || _files is null)
+{
+    <div class="empty" role="status" aria-live="polite">
+        <BrandMark Size="40" Busy="true" />
+        <h2>Looking through the uploads folder…</h2>
+        <p class="busy-detail">@_status</p>
+    </div>
+}
+else if (_files.Count == 0)
+{
+    <div class="empty">
+        <BrandMark Size="64" PlayOnLoad="true" />
+        <h2>Nothing loose</h2>
+        <p>Every file in the uploads folder belongs to an image, or Sync with disk can add it.</p>
+    </div>
+}
+else
+{
+    @foreach (var reason in Enum.GetValues<LooseReason>())
+    {
+        var files = _files.Where(f => f.Reason == reason).ToList();
+        if (files.Count == 0) continue;
+        var group = reason;
+        <section class="loose-section" aria-labelledby="@($"loose-{reason}")">
+            <div class="section-head">
+                <div>
+                    <h2 id="@($"loose-{reason}")">@Title(reason) <span class="muted num">@Format.Number(files.Count)</span></h2>
+                    <p class="muted small loose-help">@Help(reason)</p>
+                </div>
+                <button type="button" class="btn btn-ghost btn-danger-text btn-sm" disabled="@Busy" @onclick="() => DeleteAllAsync(group)">
+                    <Icon Name="trash" Size="15" />@($"Delete all {Format.Number(files.Count)} ({Format.Size(files.Sum(f => f.Size))})")
+                </button>
+            </div>
+            <ul class="loose-list">
+                @foreach (var f in files.Take(Limit(reason)))
+                {
+                    var file = f;
+                    <li @key="f.RelativePath" class="loose-file">
+                        @if (f.IsImage)
+                        {
+                            <a class="loose-thumb" href="@f.Url" target="_blank" rel="noopener" title="Open the file">
+                                <img src="@($"thumbs/file?path={Uri.EscapeDataString(f.RelativePath)}&v={f.Time.Ticks:x}")" alt="" loading="lazy" decoding="async" />
+                            </a>
+                        }
+                        else
+                        {
+                            <span class="loose-thumb loose-thumb-none"><Icon Name="file" Size="20" /></span>
+                        }
+                        <span class="loose-info">
+                            <code class="loose-path">@f.RelativePath</code>
+                            <span class="loose-meta">
+                                <span>@Format.Size(f.Size)</span>
+                                <span title="@Format.DateTime(f.Time, Zone)">@Format.Date(f.Time, Zone)</span>
+                                @if (f.Candidates.Count > 0)
+                                {
+                                    <span>@($"Could be: {string.Join("; ", f.Candidates)}")</span>
+                                }
+                            </span>
+                        </span>
+                        <button type="button" class="btn btn-ghost btn-icon btn-sm btn-danger-text" disabled="@Busy" title="Delete this file" aria-label="@($"Delete {f.RelativePath}")"
+                                @onclick="() => DeleteAsync(file)">
+                            <Icon Name="trash" Size="16" />
+                        </button>
+                    </li>
+                }
+            </ul>
+            @if (files.Count > Limit(reason))
+            {
+                <div class="more">
+                    <button type="button" class="btn btn-secondary" @onclick="() => _limits[group] = Limit(group) + Page">
+                        @($"Show {Format.Number(Math.Min(Page, files.Count - Limit(reason)))} more")
+                    </button>
+                </div>
+            }
+        </section>
+    }
+}
+
+@code {
+    private const int Page = 100;
+
+    private IReadOnlyList<LooseFile>? _files;
+    private CancellationTokenSource? _scanning;
+    private string _status = "";
+    private readonly Dictionary<LooseReason, int> _limits = [];
+
+    private int Limit(LooseReason reason) => _limits.GetValueOrDefault(reason, Page);
+
+    protected override async Task OnInitializedAsync() => await ScanAsync();
+
+    private string Title(LooseReason reason) => reason switch
+    {
+        LooseReason.OutsideGallery => "Outside a gallery folder",
+        LooseReason.SharedName => "Name shared by several images",
+        _ => "Not an image",
+    };
+
+    private string Help(LooseReason reason) => reason switch
+    {
+        LooseReason.OutsideGallery => ImagePaths.UseFrameFolder
+            ? "Images are only used at <frame>/<gallery>/<title>.jpeg. These are directly in the uploads folder, in a frame's folder, or deeper."
+            : "Images are only used at <gallery>/<title>.jpeg. These are directly in the uploads folder or deeper.",
+        LooseReason.SharedName => "Several recorded images have this file's name and none of them is in this folder's gallery, so it can't tell which image the file is.",
+        _ => "Files that aren't .jpeg, empty files, and unfinished downloads (.part). They aren't used.",
+    };
+
+    private async Task ScanAsync()
+    {
+        if (_scanning is not null) return;
+        using var scanning = CancellationTokenSource.CreateLinkedTokenSource(PageToken);
+        _scanning = scanning;
+        _status = "";
+        StateHasChanged();
+        var sinceRender = System.Diagnostics.Stopwatch.StartNew();
+        var progress = new Progress<string>(status =>
+        {
+            _status = status;
+            if (sinceRender.ElapsedMilliseconds < 200) return;
+            sinceRender.Restart();
+            StateHasChanged();
+        });
+        try
+        {
+            _files = await LibraryService.FindLooseFilesAsync(progress, scanning.Token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            _scanning = null;
+        }
+    }
+
+    // One file: right away, no confirmation (only files no image uses are ever deleted).
+    private async Task DeleteAsync(LooseFile file)
+    {
+        (int Files, long Bytes) result = default;
+        if (await RunAsync(async () => result = await LibraryService.DeleteLooseFilesAsync([file.RelativePath], PageToken)))
+        {
+            if (result.Files == 0)
+                Ui.Toast.Info("That file is gone already, or an image uses it now.");
+            _files = _files?.Where(f => f.RelativePath != file.RelativePath).ToList();
+        }
+    }
+
+    private async Task DeleteAllAsync(LooseReason reason)
+    {
+        var files = (_files ?? []).Where(f => f.Reason == reason).ToList();
+        var ok = await Ui.Confirm.AskAsync(
+            $"Delete {Format.Count(files.Count, "file", "files")}?",
+            $"This deletes {Format.Count(files.Count, "file", "files")} ({Format.Size(files.Sum(f => f.Size))}) from the uploads folder: {Title(reason).ToLowerInvariant()}. No image uses them. It can't be undone.",
+            "Delete", danger: true);
+        if (!ok) return;
+        (int Files, long Bytes) result = default;
+        if (await RunAsync(async () => result = await LibraryService.DeleteLooseFilesAsync(files.Select(f => f.RelativePath), PageToken)))
+            Ui.Toast.Success($"Deleted {Format.Count(result.Files, "file", "files")} ({Format.Size(result.Bytes)}).");
+        await ScanAsync();
+    }
+}

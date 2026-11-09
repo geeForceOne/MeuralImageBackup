@@ -18,10 +18,7 @@ var storage = builder.Configuration.GetSection("Storage");
 var paths = StoragePaths.From(storage["UploadsPath"], storage["DatabaseDirectory"], storage["ThumbnailsPath"], builder.Environment.ContentRootPath);
 paths.CreateDirectories();
 
-// SKIP_DUPLICATE_DOWNLOADS=true: an image stored in one gallery's folder isn't downloaded again into
-// another gallery's. Off unless set, so the folders keep MeuralImageUploader's layout.
-var skipStoredImages = MeuralImageBackup.Core.Services.UploadOptions.ParseSkipStoredImages(builder.Configuration["SKIP_DUPLICATE_DOWNLOADS"]);
-builder.Services.AddMeuralCore(paths, ImagePathsSetting(builder.Configuration["USE_FRAME_NAME_IN_PATH"]), skipStoredImages);
+builder.Services.AddMeuralCore(paths, ImagePathsSetting(builder.Configuration["USE_FRAME_NAME_IN_PATH"]));
 
 builder.Services.AddDataProtection()
     .SetApplicationName("MeuralImageBackup")
@@ -58,10 +55,9 @@ await using (var scope = app.Services.CreateAsyncScope())
     await using var db = await factory.CreateDbContextAsync();
     await db.Database.MigrateAsync();
 }
-app.Logger.LogInformation("{App} {Version}: images in {Uploads}, database {Database}, frame folders {FrameFolders}, duplicate downloads {Duplicates}",
+app.Logger.LogInformation("{App} {Version}: images in {Uploads}, database {Database}, frame folders {FrameFolders}",
     AppInfo.Name, AppInfo.Version, paths.UploadsPath, paths.DatabaseFile,
-    ImagePathsSetting(app.Configuration["USE_FRAME_NAME_IN_PATH"]) ? "on" : "off",
-    skipStoredImages ? "skipped" : "kept");
+    ImagePathsSetting(app.Configuration["USE_FRAME_NAME_IN_PATH"]) ? "on" : "off");
 
 if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Error", createScopeForErrors: true);

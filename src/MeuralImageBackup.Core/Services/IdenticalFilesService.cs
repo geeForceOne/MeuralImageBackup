@@ -8,13 +8,29 @@ namespace MeuralImageBackup.Core.Services;
 public sealed record IdenticalImage(int Id, string Name, int FileId, int AccessCount, DateTime CreatedAt, DateTime LastAccessedAt, IReadOnlyList<ImageView> Copies);
 
 // Different images (different Meural ids, any names) whose files are byte for byte the same. The
-// first image is the one "merge all" keeps: the most shown, then the oldest.
+// first image is the one "keep one of each" keeps: the most shown, then the oldest.
+// Two images with the same title in the same gallery share one file (files are named after the
+// title, so the second was never downloaded): removing one removes only its entry.
 public sealed record IdenticalFiles(string Hash, long Size, IReadOnlyList<IdenticalImage> Images)
 {
     public IdenticalImage Keeper => Images[0];
 
-    // The space the other images' files take.
-    public long Wasted => Images.Skip(1).Sum(i => i.Copies.Count) * Size;
+    // How many files there are on disk, and how many of them keeping the given image deletes (the
+    // others' files that aren't also that image's).
+    public int Files => Images.SelectMany(i => i.Copies).Select(c => c.RelativePath).Distinct(StringComparer.Ordinal).Count();
+
+    public int ExtraFiles(IdenticalImage keep)
+    {
+        var kept = keep.Copies.Select(c => c.RelativePath).ToHashSet(StringComparer.Ordinal);
+        return Images.Where(i => i.Id != keep.Id).SelectMany(i => i.Copies)
+            .Select(c => c.RelativePath).Where(p => !kept.Contains(p)).Distinct(StringComparer.Ordinal).Count();
+    }
+
+    // The space keeping the first image frees.
+    public long Wasted => ExtraFiles(Keeper) * Size;
+
+    // All the images use one and the same file.
+    public bool SharedFile => Files == 1;
 }
 
 // Finds images whose files are identical. Only files that share their size with another file are
@@ -31,7 +47,12 @@ public sealed class IdenticalFilesService(ImagePaths paths)
             .GroupBy(v => v.RelativePath, StringComparer.Ordinal)
             .Select(g => (Path: g.Key, Size: g.First().Size, Version: g.First().Version, Views: g.ToList()))
             .ToList();
-        var candidates = files.GroupBy(f => f.Size).Where(g => g.Count() > 1).SelectMany(g => g).ToList();
+        // Files that share their size with another file, and files that several images use (same
+        // title in the same gallery: one file, so no other file of that size to compare with).
+        var candidates = files.GroupBy(f => f.Size).Where(g => g.Count() > 1).SelectMany(g => g)
+            .Concat(files.Where(f => f.Views.Select(v => v.Id).Distinct().Count() > 1))
+            .DistinctBy(f => f.Path, StringComparer.Ordinal)
+            .ToList();
 
         var hashed = new List<(string Hash, long Size, List<ImageView> Views)>();
         for (var n = 0; n < candidates.Count; n++)
