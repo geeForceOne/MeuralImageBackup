@@ -19,7 +19,7 @@ It's the successor of MeuralImageUploader 1.x and a drop-in replacement for it: 
 - **Find and filter.** Search by name, filter by frame and by "not shown for N days", and sort any way you like. Filters live in the URL, so Back brings them back.
 - **Sync with disk.** One button adds what's in the uploads folder but missing from the database: folders become galleries, and an image shown from several galleries is listed in each.
 - **Clean up.** Delete every gallery that hasn't been shown for a while in one go, and spot and remove entries whose file has gone missing.
-- **Duplicates.** See which images are stored in several gallery folders and keep one copy, or store each image only once from the start (`SKIP_DUPLICATE_DOWNLOADS`).
+- **Duplicates.** See which images are stored in several gallery folders and keep one copy, find different images with identical files and merge them, or store each image only once from the start (`SKIP_DUPLICATE_DOWNLOADS`).
 - **A photo source for MeuralManager.** MeuralManager can browse the backup by date or gallery and put images into playlists, next to Immich, with a token from the Settings page.
 - **Dark, light or system theme**, remembered per browser.
 - **Works on phones and tablets**: sidebar on desktop, icon rail on tablets, tab bar on phones.

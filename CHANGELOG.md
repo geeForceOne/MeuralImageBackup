@@ -1,5 +1,16 @@
 # Release notes
 
+## 2.3.0 - 2026-11-09
+
+### New
+
+- **Identical files** on the Duplicates page: finds different images whose files are byte for byte the same, whatever their names, for example the same artwork uploaded to Meural twice.
+- Keep one image of such a group and the others are merged into it: their galleries list it, their show counts are added, and their files are deleted. **Merge all** does every group at once, keeping the most shown image.
+
+### Improved
+
+- The Duplicates page now has two tabs: **Same image** (one image saved in several gallery folders) and **Identical files**.
+
 ## 2.2.0 - 2026-11-09
 
 ### New

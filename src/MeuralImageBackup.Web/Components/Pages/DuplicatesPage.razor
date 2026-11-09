@@ -1,47 +1,95 @@
 @page "/duplicates"
 @inherits AppPage
 @inject UploadOptions UploadOptions
+@inject IdenticalFilesService IdenticalFilesService
 
 <PageTitle>Duplicates · @AppInfo.Name</PageTitle>
 
 <div class="page-head">
     <div>
         <h1>Duplicates</h1>
-        @if (_library is { Duplicates.Count: > 0 } lib)
+        @if (_library is not null)
         {
             <p class="page-sub">
-                <span>@($"{Format.Count(lib.Duplicates.Count, "image is", "images are")} stored in more than one gallery")</span>
-                <span>@($"{Format.Size(lib.Duplicates.Sum(d => d.Wasted))} in extra copies")</span>
+                @if (!FilesTab && _library.Duplicates.Count > 0)
+                {
+                    <span>@($"{Format.Count(_library.Duplicates.Count, "image is", "images are")} stored in more than one gallery")</span>
+                    <span>@($"{Format.Size(_library.Duplicates.Sum(d => d.Wasted))} in extra copies")</span>
+                }
+                else if (FilesTab && _identical is { Count: > 0 })
+                {
+                    <span>@($"{Format.Count(_identical.Count, "file is", "files are")} saved under more than one image")</span>
+                    <span>@($"{Format.Size(_identical.Sum(g => g.Wasted))} in extra copies")</span>
+                }
             </p>
         }
     </div>
-    @if (_shown.Count > 0)
+    @if (_bulk is not null)
     {
         <div class="page-actions">
-            @if (_bulk is not null)
-            {
-                <span class="busy-status" role="status" aria-live="polite">
-                    <BrandMark Size="22" Busy="true" />
-                    <span class="busy-text"><strong>Removing extra copies…</strong><span class="busy-detail">@_bulkStatus</span></span>
-                </span>
-                <button type="button" class="btn btn-secondary" disabled="@_bulk.IsCancellationRequested" @onclick="() => _bulk.Cancel()">
-                    <Icon Name="x" Size="16" />@(_bulk.IsCancellationRequested ? "Stopping…" : "Cancel")
-                </button>
-            }
-            else
-            {
-                <button type="button" class="btn btn-primary" disabled="@Busy" @onclick="KeepOneOfEachAsync"
-                        title="Each image keeps the copy in the gallery it was first shown in">
-                    <Icon Name="broom" Size="16" />@(_shown.Count == _library!.Duplicates.Count ? "Keep one copy of each" : $"Keep one copy of these {Format.Number(_shown.Count)}")
-                </button>
-            }
+            <span class="busy-status" role="status" aria-live="polite">
+                <BrandMark Size="22" Busy="true" />
+                <span class="busy-text"><strong>@_bulkTitle</strong><span class="busy-detail">@_bulkStatus</span></span>
+            </span>
+            <button type="button" class="btn btn-secondary" disabled="@_bulk.IsCancellationRequested" @onclick="() => _bulk.Cancel()">
+                <Icon Name="x" Size="16" />@(_bulk.IsCancellationRequested ? "Stopping…" : "Cancel")
+            </button>
+        </div>
+    }
+    else if (!FilesTab && _shown.Count > 0)
+    {
+        <div class="page-actions">
+            <button type="button" class="btn btn-primary" disabled="@Busy" @onclick="KeepOneOfEachAsync"
+                    title="Each image keeps the copy in the gallery it was first shown in">
+                <Icon Name="broom" Size="16" />@(_shown.Count == _library!.Duplicates.Count ? "Keep one copy of each" : $"Keep one copy of these {Format.Number(_shown.Count)}")
+            </button>
+        </div>
+    }
+    else if (FilesTab && _identicalShown.Count > 0)
+    {
+        <div class="page-actions">
+            <button type="button" class="btn btn-primary" disabled="@Busy" @onclick="MergeAllAsync"
+                    title="Each group keeps its most shown image">
+                <Icon Name="broom" Size="16" />@(_identicalShown.Count == _identical!.Count ? "Merge all" : $"Merge these {Format.Number(_identicalShown.Count)}")
+            </button>
         </div>
     }
 </div>
 
+<div class="segmented dupe-tabs" role="group" aria-label="Kind of duplicates">
+    <button type="button" class="@(FilesTab ? "" : "on")" aria-pressed="@(FilesTab ? "false" : "true")" @onclick='() => SetKind(null)'>
+        <Icon Name="copies" Size="16" />Same image
+        @if (_library is { Duplicates.Count: > 0 })
+        {
+            <span class="count">@Format.Number(_library.Duplicates.Count)</span>
+        }
+    </button>
+    <button type="button" class="@(FilesTab ? "on" : "")" aria-pressed="@(FilesTab ? "true" : "false")" @onclick='() => SetKind("files")'>
+        <Icon Name="file" Size="16" />Identical files
+        @if (_identical is { Count: > 0 })
+        {
+            <span class="count">@Format.Number(_identical.Count)</span>
+        }
+    </button>
+</div>
+<p class="dupe-tab-help muted small">
+    @if (FilesTab)
+    {
+        <text>Different images, under any name, whose files are byte for byte the same: for example the same artwork uploaded to Meural twice.</text>
+    }
+    else
+    {
+        <text>One image, saved again in each gallery folder it was shown from.</text>
+    }
+</p>
+
 @if (_library is null)
 {
     <div class="page-loading"><BrandMark Size="40" Busy="true" /></div>
+}
+else if (FilesTab)
+{
+    @IdenticalFilesView
 }
 else if (_library.Duplicates.Count == 0)
 {
@@ -71,26 +119,7 @@ else
         </span>
     </div>
 
-    <div class="filters">
-        <label class="filter-search">
-            <Icon Name="search" />
-            <input data-bwignore="true" type="search" placeholder="Find an image or gallery" aria-label="Find an image or gallery"
-                   value="@Q" @oninput="e => Set(q: e.Value?.ToString())" />
-        </label>
-        @if (_library.Frames.Count > 1)
-        {
-            <label class="filter-select">
-                <span>Frame</span>
-                <select class="select" value="@(Frame ?? "")" @onchange="e => Set(frame: e.Value?.ToString())">
-                    <option value="">All frames</option>
-                    @foreach (var f in _library.Frames)
-                    {
-                        <option value="@f">@f</option>
-                    }
-                </select>
-            </label>
-        }
-    </div>
+    @FilterBar()
 
     <p class="result-count muted small">
         @(_shown.Count == _library.Duplicates.Count ? Format.Count(_shown.Count, "image", "images") : $"{Format.Number(_shown.Count)} of {Format.Count(_library.Duplicates.Count, "image", "images")}")
@@ -98,11 +127,7 @@ else
 
     @if (_shown.Count == 0)
     {
-        <div class="empty">
-            <Icon Name="search" Size="28" />
-            <p>No duplicate matches these filters.</p>
-            <button type="button" class="btn btn-secondary" @onclick="ClearFilters">Show all duplicates</button>
-        </div>
+        @NoMatch
     }
     else
     {
@@ -112,7 +137,7 @@ else
                 var dupe = d;
                 var keeper = d.Keeper;
                 <article @key="d.Id" class="dupe">
-                    <button type="button" class="dupe-photo" title="View large" @onclick="() => Open(dupe)">
+                    <button type="button" class="dupe-photo" title="View large" @onclick="() => Open(dupe.Copies)">
                         <img src="@ImageTile.ThumbUrl(keeper)" alt="" loading="lazy" decoding="async" />
                     </button>
                     <div class="dupe-body">
@@ -155,7 +180,7 @@ else
                                     @if (v.HasOwnCopy)
                                     {
                                         <button type="button" class="btn btn-secondary btn-sm" disabled="@Busy" @onclick="() => KeepOnlyAsync(dupe, view)"
-                                                title="@($"Deletes the other copies; the image stays listed in every gallery")">
+                                                title="Deletes the other copies; the image stays listed in every gallery">
                                             <Icon Name="check" Size="15" />Keep only this
                                         </button>
                                     }
@@ -166,41 +191,42 @@ else
                 </article>
             }
         </div>
-
-        @if (_shown.Count > _limit)
-        {
-            <div class="more">
-                <button type="button" class="btn btn-secondary" @onclick="() => _limit += Page">
-                    @($"Show {Format.Number(Math.Min(Page, _shown.Count - _limit))} more")
-                </button>
-                <span class="muted small">@($"{Format.Number(_limit)} of {Format.Number(_shown.Count)} shown")</span>
-            </div>
-        }
+        @More(_shown.Count)
     }
-
-    <ImageViewer Images="_viewing" @bind-Index="_viewingIndex" />
 }
+
+<ImageViewer Images="_viewing" @bind-Index="_viewingIndex" />
 
 @code {
     private const int Page = 60;
 
     [SupplyParameterFromQuery] public string? Q { get; set; }
     [SupplyParameterFromQuery] public string? Frame { get; set; }
+    [SupplyParameterFromQuery] public string? Kind { get; set; }
+
+    private bool FilesTab => Kind == "files";
 
     private Library? _library;
     private List<Duplicate> _shown = [];
+    private IReadOnlyList<IdenticalFiles>? _identical;
+    private List<IdenticalFiles> _identicalShown = [];
+    private CancellationTokenSource? _finding;
+    private string _findStatus = "";
     private int _limit = Page;
     private IReadOnlyList<ImageView> _viewing = [];
     private int _viewingIndex = -1;
     private CancellationTokenSource? _bulk;
+    private string _bulkTitle = "";
     private string _bulkStatus = "";
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
         _limit = Page;
         Apply();
+        if (FilesTab && _library is not null && _identical is null && _finding is null)
+            await FindIdenticalAsync();
     }
 
     private async Task LoadAsync()
@@ -212,11 +238,13 @@ else
     private void Apply()
     {
         if (_library is null) return;
-        _shown = _library.Duplicates.Where(d =>
-                Filters.Matches(Q, [d.Name, .. d.Views.Select(v => v.GalleryName)]) &&
-                (Frame is null || d.Views.Any(v => v.FrameName == Frame)))
-            .ToList();
+        _shown = _library.Duplicates.Where(d => Matches(d.Name, d.Views)).ToList();
+        _identicalShown = (_identical ?? []).Where(g => g.Images.Any(i => Matches(i.Name, i.Copies))).ToList();
     }
+
+    private bool Matches(string name, IEnumerable<ImageView> views) =>
+        Filters.Matches(Q, [name, .. views.Select(v => v.GalleryName)]) &&
+        (Frame is null || views.Any(v => v.FrameName == Frame));
 
     private void Set(string? q = null, string? frame = null)
     {
@@ -224,18 +252,178 @@ else
         {
             ["q"] = q is null ? Q : q.Length == 0 ? null : q,
             ["frame"] = frame is null ? Frame : frame.Length == 0 ? null : frame,
+            ["kind"] = Kind,
         });
     }
 
-    private void ClearFilters() => ReplaceQuery(new Dictionary<string, object?> { ["q"] = null, ["frame"] = null });
+    private void SetKind(string? kind) => ReplaceQuery(new Dictionary<string, object?> { ["q"] = Q, ["frame"] = Frame, ["kind"] = kind });
 
-    // The viewer goes through the image's copies.
-    private void Open(Duplicate d)
+    private void ClearFilters() => ReplaceQuery(new Dictionary<string, object?> { ["q"] = null, ["frame"] = null, ["kind"] = Kind });
+
+    private void Open(IEnumerable<ImageView> views)
     {
-        _viewing = d.Copies.ToList();
+        _viewing = views.ToList();
         _viewingIndex = 0;
     }
 
+    private RenderFragment FilterBar() => __builder =>
+    {
+        <div class="filters">
+            <label class="filter-search">
+                <Icon Name="search" />
+                <input data-bwignore="true" type="search" placeholder="Find an image or gallery" aria-label="Find an image or gallery"
+                       value="@Q" @oninput="e => Set(q: e.Value?.ToString())" />
+            </label>
+            @if (_library!.Frames.Count > 1)
+            {
+                <label class="filter-select">
+                    <span>Frame</span>
+                    <select class="select" value="@(Frame ?? "")" @onchange="e => Set(frame: e.Value?.ToString())">
+                        <option value="">All frames</option>
+                        @foreach (var f in _library.Frames)
+                        {
+                            <option value="@f">@f</option>
+                        }
+                    </select>
+                </label>
+            }
+        </div>
+    };
+
+    private RenderFragment NoMatch => __builder =>
+    {
+        <div class="empty">
+            <Icon Name="search" Size="28" />
+            <p>No duplicate matches these filters.</p>
+            <button type="button" class="btn btn-secondary" @onclick="ClearFilters">Show all duplicates</button>
+        </div>
+    };
+
+    private RenderFragment More(int count) => __builder =>
+    {
+        @if (count > _limit)
+        {
+            <div class="more">
+                <button type="button" class="btn btn-secondary" @onclick="() => _limit += Page">
+                    @($"Show {Format.Number(Math.Min(Page, count - _limit))} more")
+                </button>
+                <span class="muted small">@($"{Format.Number(_limit)} of {Format.Number(count)} shown")</span>
+            </div>
+        }
+    };
+
+    private RenderFragment IdenticalFilesView => __builder =>
+    {
+        @if (_finding is not null)
+        {
+            <div class="empty dupe-finding" role="status" aria-live="polite">
+                <BrandMark Size="40" Busy="true" />
+                <h2>Comparing files…</h2>
+                <p class="busy-detail">@_findStatus</p>
+                <button type="button" class="btn btn-secondary" disabled="@_finding.IsCancellationRequested" @onclick="() => _finding.Cancel()">
+                    <Icon Name="x" Size="16" />@(_finding.IsCancellationRequested ? "Stopping…" : "Cancel")
+                </button>
+            </div>
+        }
+        else if (_identical is null)
+        {
+            <div class="empty">
+                <Icon Name="file" Size="28" />
+                <p>The comparison was stopped.</p>
+                <button type="button" class="btn btn-secondary" @onclick="FindIdenticalAsync"><Icon Name="sync" Size="16" />Compare files</button>
+            </div>
+        }
+        else if (_identical.Count == 0)
+        {
+            <div class="empty">
+                <BrandMark Size="64" PlayOnLoad="true" />
+                <h2>No identical files</h2>
+                <p>No two images have the same file. Files on disk that the database doesn't list yet are only compared after <a href="">Sync with disk</a>.</p>
+                <button type="button" class="btn btn-ghost" @onclick="RecompareAsync"><Icon Name="sync" Size="16" />Compare again</button>
+            </div>
+        }
+        else
+        {
+            <div class="notice notice-row">
+                <Icon Name="info" />
+                <span>
+                    Keeping one image merges the others into it: their files are deleted, their galleries list the kept image instead,
+                    and their show counts are added to it. If a frame shows one of the merged images again, it's saved again as its own image.
+                </span>
+            </div>
+
+            @FilterBar()
+
+            <p class="result-count muted small">
+                @(_identicalShown.Count == _identical.Count ? Format.Count(_identicalShown.Count, "group", "groups") : $"{Format.Number(_identicalShown.Count)} of {Format.Count(_identical.Count, "group", "groups")}")
+                <button type="button" class="link-button" disabled="@Busy" @onclick="RecompareAsync">Compare again</button>
+            </p>
+
+            @if (_identicalShown.Count == 0)
+            {
+                @NoMatch
+            }
+            else
+            {
+                <div class="dupe-list">
+                    @foreach (var g in _identicalShown.Take(_limit))
+                    {
+                        var group = g;
+                        <article @key="g.Hash" class="dupe">
+                            <button type="button" class="dupe-photo" title="View large" @onclick="() => Open(group.Images.SelectMany(i => i.Copies))">
+                                <img src="@ImageTile.ThumbUrl(g.Keeper.Copies[0])" alt="" loading="lazy" decoding="async" />
+                            </button>
+                            <div class="dupe-body">
+                                <div class="dupe-head">
+                                    <h2 class="dupe-name">@($"{Format.Count(g.Images.Count, "image", "images")} with the same file")</h2>
+                                    <span class="dupe-meta">
+                                        <span>@($"{Format.Size(g.Size)} each, {Format.Size(g.Wasted)} extra")</span>
+                                    </span>
+                                </div>
+                                <ul class="dupe-copies">
+                                    @foreach (var i in g.Images)
+                                    {
+                                        var image = i;
+                                        <li class="dupe-copy">
+                                            <span class="dupe-where">
+                                                <span class="dupe-gallery">
+                                                    @i.Name
+                                                    @if (i == g.Keeper)
+                                                    {
+                                                        <span class="tag" title="&quot;Merge all&quot; keeps the most shown image">Most shown</span>
+                                                    }
+                                                </span>
+                                                <span class="dupe-sub">
+                                                    <span>
+                                                        @for (var n = 0; n < i.Copies.Count; n++)
+                                                        {
+                                                            var copy = i.Copies[n];
+                                                            if (n > 0) { <text>, </text> }
+                                                            <a href="@($"g/{copy.GalleryId}")">@copy.GalleryName</a>
+                                                            @if (_library!.Frames.Count > 1) { <text> (@copy.FrameName)</text> }
+                                                        }
+                                                    </span>
+                                                    <span>@($"Shown {Format.Count(i.AccessCount, "time", "times")}")</span>
+                                                    <span title="Meural's id for this image">@($"Meural id {i.FileId}")</span>
+                                                </span>
+                                            </span>
+                                            <button type="button" class="btn btn-secondary btn-sm" disabled="@Busy" @onclick="() => KeepImageAsync(group, image)"
+                                                    title="Merges the other images into this one">
+                                                <Icon Name="check" Size="15" />Keep this one
+                                            </button>
+                                        </li>
+                                    }
+                                </ul>
+                            </div>
+                        </article>
+                    }
+                </div>
+                @More(_identicalShown.Count)
+            }
+        }
+    };
+
+    // Same image: keeps the chosen copy, deletes the image's other copies.
     private async Task KeepOnlyAsync(Duplicate d, ImageView keep)
     {
         var others = d.Copies.Where(c => c.GalleryId != keep.GalleryId).ToList();
@@ -248,7 +436,7 @@ else
         if (await RunAsync(async () => result = await LibraryService.KeepOneCopyAsync(d.Id, keep.GalleryId, PageToken)))
         {
             Ui.Toast.Success($"Deleted {Format.Count(result.Files, "copy", "copies")} of {d.Name} ({Format.Size(result.Bytes)}).");
-            await LoadAsync();
+            await ReloadAsync();
         }
     }
 
@@ -262,34 +450,137 @@ else
             "Delete copies", danger: true);
         if (!ok) return;
 
+        var result = await RunBulkAsync("Removing extra copies…", (progress, ct) => LibraryService.KeepOneCopyOfEachAsync(duplicates, progress, ct),
+            "Stopped. The copies deleted until then are gone; the rest are still there.");
+        if (result is not null)
+            Ui.Toast.Success($"Deleted {Format.Count(result.FilesDeleted, "extra copy", "extra copies")} of {Format.Count(result.Images, "image", "images")} ({Format.Size(result.BytesFreed)}).");
+    }
+
+    // Identical files: merges the group's other images into the chosen one.
+    private async Task KeepImageAsync(IdenticalFiles group, IdenticalImage keep)
+    {
+        var others = group.Images.Where(i => i.Id != keep.Id).ToList();
+        var ok = await Ui.Confirm.AskAsync(
+            $"Keep {keep.Name}?",
+            $"This merges {string.Join(", ", others.Select(o => o.Name))} into it and deletes {Format.Count(others.Sum(o => o.Copies.Count), "file", "files")} ({Format.Size(others.Sum(o => o.Copies.Count) * group.Size)}). Their galleries list {keep.Name} instead. It can't be undone.",
+            "Merge", danger: true);
+        if (!ok) return;
+        var files = 0;
+        var bytes = 0L;
+        if (await RunAsync(async () =>
+            {
+                foreach (var other in others)
+                {
+                    var (f, b) = await LibraryService.MergeIntoAsync(keep.Id, other.Id, PageToken);
+                    files += f;
+                    bytes += b;
+                }
+            }))
+        {
+            Ui.Toast.Success($"Merged {Format.Count(others.Count, "image", "images")} into {keep.Name}, deleted {Format.Count(files, "file", "files")} ({Format.Size(bytes)}).");
+        }
+        await ReloadAsync();
+    }
+
+    private async Task MergeAllAsync()
+    {
+        var groups = _identicalShown.ToList();
+        var images = groups.Sum(g => g.Images.Count - 1);
+        var ok = await Ui.Confirm.AskAsync(
+            $"Merge {Format.Count(images, "image", "images")}?",
+            $"Each of the {Format.Count(groups.Count, "group", "groups")} keeps its most shown image; the others are merged into it and their files deleted ({Format.Size(groups.Sum(g => g.Wasted))}). Their galleries list the kept image instead. It can't be undone.",
+            "Merge", danger: true);
+        if (!ok) return;
+
+        var result = await RunBulkAsync("Merging identical files…", (progress, ct) => LibraryService.MergeIdenticalAsync(groups, progress, ct),
+            "Stopped. The images merged until then stay merged; the rest are as they were.");
+        if (result is not null)
+            Ui.Toast.Success($"Merged {Format.Count(result.Images, "image", "images")}, deleted {Format.Count(result.FilesDeleted, "file", "files")} ({Format.Size(result.BytesFreed)}).");
+    }
+
+    // Runs a long action with its progress in the page head and a Cancel button, then reloads.
+    private async Task<DedupeResult?> RunBulkAsync(string title, Func<IProgress<string>, CancellationToken, Task<DedupeResult>> work, string stoppedMessage)
+    {
         DedupeResult? result = null;
         bool done;
         using (var bulk = CancellationTokenSource.CreateLinkedTokenSource(PageToken))
         {
             _bulk = bulk;
+            _bulkTitle = title;
             _bulkStatus = "";
-            var sinceRender = System.Diagnostics.Stopwatch.StartNew();
-            var progress = new Progress<string>(status =>
-            {
-                _bulkStatus = status;
-                if (sinceRender.ElapsedMilliseconds < 200) return;
-                sinceRender.Restart();
-                StateHasChanged();
-            });
+            var progress = ThrottledProgress(s => _bulkStatus = s);
             try
             {
-                done = await RunAsync(async () => result = await LibraryService.KeepOneCopyOfEachAsync(duplicates, progress, bulk.Token));
+                done = await RunAsync(async () => result = await work(progress, bulk.Token));
             }
             finally
             {
                 _bulk = null;
             }
             if (!done && bulk.IsCancellationRequested && !PageToken.IsCancellationRequested)
-                Ui.Toast.Info("Stopped. The copies deleted until then are gone; the rest are still there.");
+                Ui.Toast.Info(stoppedMessage);
         }
-        if (done && result is not null)
-            Ui.Toast.Success($"Deleted {Format.Count(result.FilesDeleted, "extra copy", "extra copies")} of {Format.Count(result.Images, "image", "images")} ({Format.Size(result.BytesFreed)}).");
         if (!PageToken.IsCancellationRequested)
-            await LoadAsync();
+            await ReloadAsync();
+        return done ? result : null;
+    }
+
+    private async Task FindIdenticalAsync()
+    {
+        if (_library is null || _finding is not null) return;
+        using var finding = CancellationTokenSource.CreateLinkedTokenSource(PageToken);
+        _finding = finding;
+        _findStatus = "Starting";
+        StateHasChanged();
+        try
+        {
+            _identical = await IdenticalFilesService.FindAsync(_library, ThrottledProgress(s => _findStatus = s), finding.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            _identical = null;
+        }
+        finally
+        {
+            _finding = null;
+        }
+        Apply();
+        StateHasChanged();
+    }
+
+    private async Task RecompareAsync()
+    {
+        await LoadAsync();
+        _identical = null;
+        await FindIdenticalAsync();
+    }
+
+    // After a change: the library again, and the identical files again when that tab is open
+    // (quick: the fingerprints are known).
+    private async Task ReloadAsync()
+    {
+        await LoadAsync();
+        if (FilesTab)
+        {
+            _identical = null;
+            await FindIdenticalAsync();
+        }
+        else
+        {
+            _identical = null;
+        }
+    }
+
+    // Progress<T> reports on the circuit's context; redraw at most a few times a second.
+    private Progress<string> ThrottledProgress(Action<string> set)
+    {
+        var sinceRender = System.Diagnostics.Stopwatch.StartNew();
+        return new Progress<string>(status =>
+        {
+            set(status);
+            if (sinceRender.ElapsedMilliseconds < 200) return;
+            sinceRender.Restart();
+            StateHasChanged();
+        });
     }
 }
