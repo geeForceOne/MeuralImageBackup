@@ -472,6 +472,11 @@ else
             Ui.Toast.Success(files == 0
                 ? $"Kept {keep.Name}, removed {Format.Count(others.Count, "image", "images")}; they shared its file."
                 : $"Kept {keep.Name}, removed {Format.Count(others.Count, "image", "images")} and {Format.Count(files, "file", "files")} ({Format.Size(bytes)}).");
+            // The group goes right away and the others close the gap; the quiet refresh below
+            // only changes the list if something else changed too.
+            _identical = _identical?.Where(g => g.Hash != group.Hash).ToList();
+            Apply();
+            StateHasChanged();
         }
         await ReloadAsync();
     }
@@ -550,13 +555,37 @@ else
     }
 
     // After a change: the library again, and the identical files again when that tab is open
-    // (quick: the fingerprints are known).
+    // (quick: the fingerprints are known). The list stays on screen meanwhile; the "Comparing
+    // files" screen is only for when there's no list yet, so nothing flickers.
     private async Task ReloadAsync()
     {
         await LoadAsync();
-        ClearIdentical();
-        if (FilesTab)
+        if (FilesTab && _identical is not null)
+            await RefreshIdenticalQuietlyAsync();
+        else if (FilesTab)
             await FindIdenticalAsync();
+        else
+            ClearIdentical();
+    }
+
+    // Compares again without the busy screen and swaps the list when done. A newer refresh wins.
+    private int _refreshes;
+
+    private async Task RefreshIdenticalQuietlyAsync()
+    {
+        if (_library is null) return;
+        var mine = ++_refreshes;
+        try
+        {
+            var found = await IdenticalFilesService.FindAsync(_library, null, PageToken);
+            if (mine != _refreshes) return;
+            _identical = found;
+            Apply();
+            StateHasChanged();
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
     // Forgets the comparison. The visible groups go with it, so nothing renders a list that's gone.
