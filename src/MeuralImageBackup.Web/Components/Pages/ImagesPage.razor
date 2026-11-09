@@ -289,7 +289,7 @@ else
             image.Exists ? "Delete" : "Remove", danger: true);
         if (!ok) return;
         var at = _viewing;
-        if (await RunAsync(() => LibraryService.DeleteImageAsync(image.Id, image.GalleryId, PageToken)))
+        if (await RunAsync(() => LibraryService.DeleteImageAsync(image.Id, PageToken)))
         {
             await LoadAsync();
             _viewing = _shown.Count == 0 ? -1 : Math.Min(at, _shown.Count - 1);

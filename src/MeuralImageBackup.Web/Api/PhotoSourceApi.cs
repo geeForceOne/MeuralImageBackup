@@ -11,10 +11,10 @@ namespace MeuralImageBackup.Web.Api;
 // to it with a second instance of that client: users/me, search/metadata, search/smart, albums,
 // assets/{id}/thumbnail and assets/{id}/original. Immich's people aren't offered.
 //
-// - An asset is a recorded image whose file exists (an image in several galleries is one asset);
-//   its id is the image's id. Its date is when the backup first saved it.
+// - An asset is a recorded image whose file exists; its id is the image's id. The same Meural file
+//   in two galleries is two images, so two assets. Its date is when the backup first saved it.
 // - An album is a gallery, with the images in it that have a file.
-// - search/smart is a plain text search on the image's and its galleries' names (Immich's is an AI
+// - search/smart is a plain text search on the image's and its gallery's names (Immich's is an AI
 //   image search, which this app doesn't have).
 //
 // Every request needs the token from the Settings page in an X-API-Key header (Immich's header);
@@ -143,7 +143,7 @@ public static class PhotoSourceApi
         LastShownAt: image.LastAccessedAt);
 
     private static async Task<string?> FileAsync(LibraryService library, string id, CancellationToken ct) =>
-        ParseId(id) is var imageId && imageId > 0 ? await library.FilePathAsync(imageId, null, ct) : null;
+        ParseId(id) is var imageId && imageId > 0 ? await library.FilePathAsync(imageId, ct) : null;
 
     private static string Id(int id) => id.ToString(CultureInfo.InvariantCulture);
 

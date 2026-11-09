@@ -1,8 +1,9 @@
 namespace MeuralImageBackup.Core.Models;
 
-// An image that's also in a gallery other than its own (Image.GalleryId): the same Meural file shown
-// from a second gallery, or found in that gallery's folder by the sync. Its file is a separate copy
-// in that gallery's folder. Added in 2.1.0 (migration 003_GalleryImages).
+// Legacy, from 2.1.0 to 2.4.1: an image that was also listed in a gallery other than its own
+// (Image.GalleryId), with a copy of its file in that gallery's folder (migration 003_GalleryImages).
+// Since 2.5.0 an image belongs to one gallery and nothing writes this table any more; the one-time
+// cleanup (LibraryService.CleanUpLegacyAsync) empties it. A later migration can drop it.
 public class GalleryImage
 {
     public int GalleryId { get; set; }

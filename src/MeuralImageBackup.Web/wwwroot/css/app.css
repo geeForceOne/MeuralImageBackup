@@ -809,19 +809,12 @@ a.stat:hover { border-color: var(--rule-strong); text-decoration: none; backgrou
     border-radius: var(--r-md);
     background: var(--paper);
 }
-.dupe-copy-shared { border-style: dashed; background: transparent; }
 .dupe-where { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 200px; }
 .dupe-gallery { font-size: var(--t-sm); font-weight: 500; overflow-wrap: anywhere; }
 .dupe-gallery .tag { margin-left: 8px; }
 .dupe-sub { display: flex; flex-wrap: wrap; gap: 0 10px; color: var(--pencil); font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
 .dupe-sub span { display: inline-flex; align-items: center; gap: 4px; }
 
-.tile-badge-left { right: auto; left: 7px; padding: 3px 5px; }
-
-.dupe-tabs { display: inline-flex; margin-bottom: 6px; }
-.dupe-tabs button { display: inline-flex; align-items: center; gap: 7px; padding-left: 12px; padding-right: 12px; }
-.dupe-tabs .count { padding: 0 6px; border-radius: 999px; background: var(--sheet-3); color: var(--ink-soft); font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
-.dupe-tabs .on .count { background: var(--accent-soft); color: var(--accent); }
 .dupe-tab-help { margin: 0 0 16px; }
 .dupe-finding .busy-detail { white-space: normal; }
 .result-count .link-button { margin-left: 10px; }

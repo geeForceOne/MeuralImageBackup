@@ -4,10 +4,11 @@ using MeuralImageBackup.Core.Files;
 
 namespace MeuralImageBackup.Core.Services;
 
-// One image in a group of identical files: its copies (one per gallery folder that has the file).
+// One image in a group of identical files. Copies is its view (one: an image has one file).
 public sealed record IdenticalImage(int Id, string Name, int FileId, int AccessCount, DateTime CreatedAt, DateTime LastAccessedAt, IReadOnlyList<ImageView> Copies);
 
-// Different images (different Meural ids, any names) whose files are byte for byte the same. The
+// Different images (any Meural ids, any names, any galleries) whose files are byte for byte the
+// same: the same artwork uploaded twice, or the same Meural file shown in two galleries. The
 // first image is the one "keep one of each" keeps: the most shown, then the oldest.
 // Two images with the same title in the same gallery share one file (files are named after the
 // title, so the second was never downloaded): removing one removes only its entry.
@@ -42,8 +43,8 @@ public sealed class IdenticalFilesService(ImagePaths paths)
 
     public async Task<IReadOnlyList<IdenticalFiles>> FindAsync(Library library, IProgress<string>? progress = null, CancellationToken ct = default)
     {
-        // Each file once (a gallery showing another gallery's copy doesn't count).
-        var files = library.Images.Where(v => v.HasOwnCopy)
+        // Each file once (two images with the same title in a folder two galleries share use one).
+        var files = library.Images.Where(v => v.Exists)
             .GroupBy(v => v.RelativePath, StringComparer.Ordinal)
             .Select(g => (Path: g.Key, Size: g.First().Size, Version: g.First().Version, Views: g.ToList()))
             .ToList();

@@ -76,10 +76,6 @@ else
                             <span class="loose-meta">
                                 <span>@Format.Size(f.Size)</span>
                                 <span title="@Format.DateTime(f.Time, Zone)">@Format.Date(f.Time, Zone)</span>
-                                @if (f.Candidates.Count > 0)
-                                {
-                                    <span>@($"Could be: {string.Join("; ", f.Candidates)}")</span>
-                                }
                             </span>
                         </span>
                         <button type="button" class="btn btn-ghost btn-icon btn-sm btn-danger-text" disabled="@Busy" title="Delete this file" aria-label="@($"Delete {f.RelativePath}")"
@@ -116,7 +112,6 @@ else
     private string Title(LooseReason reason) => reason switch
     {
         LooseReason.OutsideGallery => "Outside a gallery folder",
-        LooseReason.SharedName => "Name shared by several images",
         _ => "Not an image",
     };
 
@@ -125,7 +120,6 @@ else
         LooseReason.OutsideGallery => ImagePaths.UseFrameFolder
             ? "Images are only used at <frame>/<gallery>/<title>.jpeg. These are directly in the uploads folder, in a frame's folder, or deeper."
             : "Images are only used at <gallery>/<title>.jpeg. These are directly in the uploads folder or deeper.",
-        LooseReason.SharedName => "Several recorded images have this file's name and none of them is in this folder's gallery, so it can't tell which image the file is.",
         _ => "Files that aren't .jpeg, empty files, and unfinished downloads (.part). They aren't used.",
     };
 
