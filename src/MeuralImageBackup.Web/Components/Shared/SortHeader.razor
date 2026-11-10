@@ -1,0 +1,21 @@
+@* A table header that sorts by its column: a click sorts by it in its natural direction, a second
+   click reverses it. The arrow shows the current direction. *@
+<th class="@Class" aria-sort="@(On ? (Descending ? "descending" : "ascending") : "none")">
+    <button type="button" class="sort-button @(On ? "on" : "")" title="@($"Sort by {Label.ToLowerInvariant()}")" @onclick="() => OnSort.InvokeAsync(Key)">
+        <span>@Label</span><span class="sort-mark" aria-hidden="true">@(On ? (Descending ? "▼" : "▲") : "▲")</span>
+    </button>
+</th>
+
+@code {
+    [Parameter, EditorRequired] public string Key { get; set; } = "";
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public string? Class { get; set; }
+
+    // The page's current sort and direction.
+    [Parameter] public string Current { get; set; } = "";
+    [Parameter] public bool Descending { get; set; }
+
+    [Parameter] public EventCallback<string> OnSort { get; set; }
+
+    private bool On => Current == Key;
+}

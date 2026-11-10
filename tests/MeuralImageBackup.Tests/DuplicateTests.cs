@@ -5,8 +5,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace MeuralImageBackup.Tests;
 
-// One image per gallery (2.5.0): the same Meural file shown in two galleries is two images, each
-// with its own file; the one-time cleanup of images listed in several galleries (2.1.0 to 2.4.1);
+// One image per gallery: the same Meural file shown in two galleries is two images, each
+// with its own file; the one-time cleanup of images listed in several galleries (pre-release builds);
 // and different images with identical files.
 public class DuplicateTests
 {
@@ -78,7 +78,7 @@ public class DuplicateTests
         Assert.Equal("B", Assert.Single((await library.LoadAsync()).Images).GalleryName);
     }
 
-    // Image 1 belongs to A and is linked to B and C, as 2.1.0 to 2.4.1 recorded it; image 2 in A.
+    // Image 1 belongs to A and is linked to B and C, as the pre-release builds recorded it; image 2 in A.
     // ownFile and copies say which of the three folders have image 1's file.
     private static async Task<(DbFactory Db, LibraryService Library, int ImageId)> LegacyAsync(TestStorage storage, bool ownFile = true, bool copyInB = true, bool copyInC = true)
     {

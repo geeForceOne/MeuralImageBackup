@@ -8,7 +8,7 @@ namespace MeuralImageBackup.Core.Services;
 
 // An image: one Meural file shown in one gallery, with where its file is and whether it's there.
 // The same Meural file shown in two galleries is two images, each with its own file in its own
-// gallery's folder (since 2.5.0; from 2.1.0 to 2.4.1 one image could be listed in several
+// gallery's folder (in pre-release builds one image could be listed in several
 // galleries, see LegacyCleanup). Times are UTC.
 public sealed record ImageView(
     int Id, int FileId, string Name, int GalleryId, string GalleryName, string FrameName,
@@ -36,7 +36,7 @@ public sealed record Library(IReadOnlyList<GalleryView> Galleries, IReadOnlyList
     public IReadOnlyList<string> Frames { get; } = Galleries.Select(g => g.FrameName).Distinct().Order(StringComparer.CurrentCultureIgnoreCase).ToList();
 }
 
-// From 2.1.0 to 2.4.1 an image could be listed in several galleries (the table GalleryImages), with
+// In pre-release builds an image could be listed in several galleries (the table GalleryImages), with
 // a copy of its file in each of their folders. The cleanup makes each such image belong to one
 // gallery again: its own (where it was first shown) when that folder has its file, else the first
 // other one that has it, where it moves. The copies in the other galleries' folders are deleted and
@@ -356,7 +356,7 @@ public sealed class LibraryService(IDbContextFactory<MeuralDb> dbFactory, ImageP
     //   belongs to the gallery whose folder it's in. When the file is named like images recorded
     //   elsewhere that all have one Meural id (the same Meural file shown in another gallery), the
     //   entry takes that id; else the id from a numeric name, or 0, which registration fills in.
-    // The copies of images listed in several galleries (before 2.5.0) are left to the legacy cleanup.
+    // The copies of images listed in several galleries (pre-release builds) are left to the legacy cleanup.
     public Task<SyncResult> SyncWithDiskAsync(IProgress<string>? progress = null, CancellationToken ct = default) =>
         SyncAsync(apply: true, loose: null, progress, ct);
 

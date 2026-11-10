@@ -4,6 +4,9 @@
 @inject StoragePaths Storage
 @inject MeuralImageBackup.Core.Files.ImagePaths ImagePaths
 @inject IJSRuntime JS
+@inject RegionSettings RegionSettings
+@using System.Globalization
+@using MeuralImageBackup.Core.Localization
 
 <PageTitle>Settings · @AppInfo.Name</PageTitle>
 
@@ -96,6 +99,53 @@
     }
 </section>
 
+<section class="settings-section" aria-labelledby="region-title">
+    <div class="settings-head">
+        <h2 id="region-title"><Icon Name="clock" Size="18" />Region format</h2>
+        <p>How numbers, dates and times are written, and the time zone they're shown in, for everyone using this installation. Automatic follows each browser.</p>
+    </div>
+
+    @if (_regionLoaded)
+    {
+        <form class="region-form" @onsubmit="SaveRegionAsync" @onsubmit:preventDefault="true">
+            <div class="region-fields">
+                <label class="field">
+                    <span>Region format</span>
+                    <select class="select" @bind="_region">
+                        <option value="">@($"Automatic ({BrowserCulture.EnglishName})")</option>
+                        @foreach (var r in Regions.RegionFormats)
+                        {
+                            <option value="@r">@CultureInfo.GetCultureInfo(r).EnglishName</option>
+                        }
+                    </select>
+                </label>
+                <label class="field">
+                    <span>Time zone</span>
+                    <select class="select" @bind="_timeZone">
+                        <option value="">@($"Automatic ({(_browser?.TimeZone ?? "from the browser").Replace('_', ' ')})")</option>
+                        @foreach (var id in Regions.TimeZoneIdsWith(_savedTimeZone))
+                        {
+                            <option value="@id">@id.Replace('_', ' ')</option>
+                        }
+                    </select>
+                </label>
+            </div>
+            <div class="region-sample">
+                <span class="muted small">Example</span>
+                <span class="num">@(1234567.89.ToString("N2", SampleCulture))</span>
+                <span class="num">@SampleNow.ToString("g", SampleCulture)</span>
+            </div>
+            <div class="settings-actions">
+                <button type="submit" class="btn btn-primary" disabled="@(Busy || !RegionChanged)">Save</button>
+            </div>
+        </form>
+    }
+    else
+    {
+        <div class="settings-loading"><BrandMark Size="24" Busy="true" /></div>
+    }
+</section>
+
 <section class="settings-section" aria-labelledby="container-title">
     <div class="settings-head">
         <h2 id="container-title"><Icon Name="disk" Size="18" />Container</h2>
@@ -126,9 +176,66 @@
     private DateTime? _createdAt;
     private string? _newToken;
 
+    // The region settings: "" in the dropdowns is automatic.
+    private bool _regionLoaded;
+    private string _region = "";
+    private string _timeZone = "";
+    private string? _savedRegion;
+    private string? _savedTimeZone;
+    private BrowserRegion? _browser;
+
+    private sealed record BrowserRegion(string? Language, string? TimeZone);
+
     private string ServerUrl => Nav.BaseUri.TrimEnd('/');
 
-    protected override async Task OnInitializedAsync() => await LoadAsync();
+    private bool RegionChanged => _region != (_savedRegion ?? "") || _timeZone != (_savedTimeZone ?? "");
+
+    // What automatic means in this browser: its language's format (de-CH when there's none).
+    private CultureInfo BrowserCulture
+    {
+        get
+        {
+            try
+            {
+                if (_browser?.Language is { Length: > 0 } language)
+                {
+                    var culture = CultureInfo.GetCultureInfo(language);
+                    return culture.IsNeutralCulture ? CultureInfo.CreateSpecificCulture(language) : culture;
+                }
+            }
+            catch (CultureNotFoundException)
+            {
+            }
+            return Regions.Culture(null);
+        }
+    }
+
+    private CultureInfo SampleCulture => _region.Length > 0 ? Regions.Culture(_region) : BrowserCulture;
+
+    private DateTime SampleNow
+    {
+        get
+        {
+            var zone = _timeZone.Length > 0 ? AppUi.FindZone(_timeZone) : AppUi.FindZone(_browser?.TimeZone);
+            return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zone);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        (_savedRegion, _savedTimeZone) = await RegionSettings.GetAsync(PageToken);
+        (_region, _timeZone) = (_savedRegion ?? "", _savedTimeZone ?? "");
+        try { _browser = await JS.InvokeAsync<BrowserRegion>("meural.browserRegion"); } catch (JSException) { }
+        _regionLoaded = true;
+    }
+
+    // The page's circuit keeps the format it started with, so it reloads to show the new one.
+    private async Task SaveRegionAsync()
+    {
+        if (await RunAsync(() => RegionSettings.SetAsync(_region.Length > 0 ? _region : null, _timeZone.Length > 0 ? _timeZone : null, PageToken)))
+            Nav.NavigateTo(Nav.Uri, forceLoad: true);
+    }
 
     private async Task LoadAsync()
     {

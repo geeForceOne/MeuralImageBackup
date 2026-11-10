@@ -49,9 +49,14 @@
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
 
+    [Inject]
+    private RegionSettings RegionSettings { get; set; } = default!;
+
     private string? _timeZone;
 
-    protected override void OnInitialized() => _timeZone = HttpContext.Request.Cookies["mib-tz"];
+    // The time zone chosen in Settings, else the browser's.
+    protected override async Task OnInitializedAsync() =>
+        _timeZone = (await RegionSettings.GetAsync(HttpContext.RequestAborted)).TimeZone ?? HttpContext.Request.Cookies["mib-tz"];
 
     // Every page is interactive, without prerendering (the error page renders statically).
     private IComponentRenderMode? PageRenderMode =>

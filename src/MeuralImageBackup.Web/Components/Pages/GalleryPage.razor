@@ -1,5 +1,6 @@
 @page "/g/{Id:int}"
 @inherits AppPage
+@inject Prefs Prefs
 
 <PageTitle>@(_gallery?.Name ?? "Gallery") · @AppInfo.Name</PageTitle>
 
@@ -60,15 +61,7 @@ else
     {
         <div class="section-head">
             <h2>Images</h2>
-            <label class="filter-select">
-                <span>Sort</span>
-                <select class="select" value="@_sort" @onchange="SortChanged">
-                    @foreach (var (key, label) in Filters.ImageSorts.Where(s => s.Key != "gallery"))
-                    {
-                        <option value="@key">@label</option>
-                    }
-                </select>
-            </label>
+            <SortPicker Choices="Sorts" Current="@_sort" Descending="Filters.IsDescending(_sort, _dir)" OnSort="PickSortAsync" />
         </div>
         <div class="tile-grid">
             @for (var i = 0; i < _images.Count; i++)
@@ -88,8 +81,22 @@ else
     private Library? _library;
     private GalleryView? _gallery;
     private List<ImageView> _images = [];
-    private string _sort = "recent";
+    private const string SortPref = "gallerySort";
+
+    // A gallery's images all share its gallery and frame.
+    private static readonly (string Key, string Label)[] Sorts = Filters.ImageSorts.Where(s => s.Key is not ("gallery" or "frame")).ToArray();
+
+    private string _sort = Filters.DefaultSort;
+    private string? _dir;
     private int _viewing = -1;
+
+    // The sort this browser used last on a gallery.
+    protected override async Task OnInitializedAsync()
+    {
+        var (sort, dir) = await Prefs.GetSortAsync(SortPref);
+        _sort = Filters.Known(sort, Sorts);
+        _dir = dir;
+    }
 
     protected override async Task OnParametersSetAsync() => await LoadAsync();
 
@@ -100,13 +107,15 @@ else
         Apply();
     }
 
-    private void SortChanged(ChangeEventArgs e)
+    private async Task PickSortAsync((string Sort, bool? Descending) pick)
     {
-        _sort = e.Value?.ToString() ?? "recent";
+        _sort = Filters.Known(pick.Sort, Sorts);
+        _dir = Filters.Dir(_sort, pick.Descending ?? Filters.NaturallyDescending(_sort));
         Apply();
+        await Prefs.SetSortAsync(SortPref, _sort, _dir);
     }
 
-    private void Apply() => _images = _gallery is null ? [] : Filters.Sort(_gallery.Images, _sort).ToList();
+    private void Apply() => _images = _gallery is null ? [] : Filters.Sort(_gallery.Images, _sort, _dir).ToList();
 
     private async Task DeleteGalleryAsync()
     {

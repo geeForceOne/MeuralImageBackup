@@ -569,9 +569,33 @@ a.stat:hover { border-color: var(--rule-strong); text-decoration: none; backgrou
 .table tr.clickable:hover td { background: var(--sheet-2); }
 /* Positioned, so a visually hidden label in a cell stays inside and doesn't widen the page. */
 .table-scroll { overflow-x: auto; position: relative; }
-.sort-button { padding: 0; border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
-.sort-button:hover { color: var(--ink); }
-.sort-mark { color: var(--accent); }
+/* After .table th, which would otherwise win and leave number headers left of their numbers. */
+.table th.num { text-align: right; }
+.table th.image-table-photo { padding-left: 10px; padding-right: 10px; }
+/* The whole header is the button; the arrow shows on hover and stays on the sorted column. A
+   right-aligned column puts its arrow first, so the label lines up with the numbers below. */
+.sort-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    white-space: nowrap;
+    cursor: pointer;
+}
+th.num .sort-button { flex-direction: row-reverse; }
+.sort-button:hover, .sort-button.on { color: var(--ink); }
+.sort-mark { font-size: 0.8em; color: var(--accent); visibility: hidden; }
+.sort-button.on .sort-mark { visibility: visible; }
+.sort-button:not(.on):hover .sort-mark { visibility: visible; color: var(--pencil); }
+.sort-picker .sort-dir { width: 34px; min-height: 34px; color: var(--accent); }
+/* On phones the table's headers are hidden, so the table view gets the sort picker there. */
+.sort-picker-phone { display: none; }
 .image-table-photo { width: 56px; }
 .image-table-photo img, .image-table-nophoto { display: grid; place-items: center; width: 44px; height: 44px; object-fit: cover; border-radius: var(--r-sm); background: var(--sheet-3); color: var(--attention); }
 .image-table tr.missing .image-table-nophoto { background: var(--attention-soft); }
@@ -868,6 +892,10 @@ a.stat:hover { border-color: var(--rule-strong); text-decoration: none; backgrou
 .state { display: inline-flex; align-items: center; gap: 5px; margin-right: 8px; font-weight: 500; }
 .state-on { color: var(--good); }
 .settings-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.region-fields { display: flex; flex-wrap: wrap; gap: 12px 18px; margin-top: 18px; }
+.region-fields .field { flex: 0 1 280px; }
+.region-fields .select { width: 100%; }
+.region-sample { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; margin-top: 14px; }
 .settings-more { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--rule); color: var(--ink-soft); }
 .settings-more summary { cursor: pointer; color: var(--accent); font-weight: 500; }
 .settings-more ul { margin: 8px 0; padding-left: 20px; }
@@ -952,7 +980,8 @@ a.stat:hover { border-color: var(--rule-strong); text-decoration: none; backgrou
     .stat-value { font-size: var(--t-lg); }
     .filters { position: static; padding: 8px; gap: 8px; }
     .filter-search { flex-basis: 100%; }
-    .filter-select > span { display: none; }
+    .filter-select > span, .sort-picker > label { display: none; }
+    .sort-picker-phone { display: inline-flex; }
     .filter-view { margin-left: 0; }
     .gallery-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 160px), 1fr)); gap: 10px; }
     .gallery-body { padding: 10px 11px 12px; }

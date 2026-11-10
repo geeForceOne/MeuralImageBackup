@@ -18,6 +18,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IdenticalFilesService>();
         services.AddSingleton<SettingsService>();
         services.AddSingleton<ApiTokenService>();
+        services.AddSingleton<RegionSettings>();
 
         // The downloads from Meural's servers. Their firewall turns away requests without a User-Agent.
         services.AddHttpClient<UploadService>(client =>

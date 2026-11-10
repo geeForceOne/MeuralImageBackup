@@ -74,7 +74,7 @@ public class FileNamingTests
     [InlineData(null, "2.0.0", null, true)]
     [InlineData("2.0.0", "2.0.0", null, false)]
     [InlineData("1.9.0", "2.0.0", "2.0.0", false)]
-    [InlineData("2.1.0", "2.0.0", null, false)]
+    [InlineData("2.5.0", "2.0.0", "2.0.0", false)]
     [InlineData("garbage", "2.0.0", "2.0.0", false)]
     [InlineData(null, "dev", null, false)]
     public void WhatsNewBanner(string? seen, string running, string? show, bool store) =>
