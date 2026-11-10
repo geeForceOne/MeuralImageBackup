@@ -97,7 +97,7 @@ Records the gallery and image and downloads `url`, unless the file is already th
 
 ### `GET /api/version`
 
-The app's version as plain text, for example `2.5.0.0`.
+The app's version as plain text, for example `2.0.0.0`.
 
 ### Photo source for MeuralManager
 

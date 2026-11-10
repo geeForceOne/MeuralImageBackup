@@ -14,7 +14,7 @@ public sealed record MeuralUpload(string? FrameName, string? Title, string? Gall
 // can't count a gallery twice.
 // An image belongs to the gallery it's shown in: shown in another gallery, the same Meural file is
 // recorded there as another image and saved in that gallery's folder too (as MeuralImageUploader
-// saved it; since 2.5.0 the entry is kept per gallery as well).
+// saved it; the entry is kept per gallery as well).
 public sealed class UploadService(IDbContextFactory<MeuralDb> dbFactory, ImagePaths paths, HttpClient http, ILogger<UploadService> logger)
 {
 
@@ -71,7 +71,7 @@ public sealed class UploadService(IDbContextFactory<MeuralDb> dbFactory, ImagePa
 
     // One image per Meural file id and gallery; without an id nothing is recorded. An entry the sync
     // made from a file without knowing the id (FileId 0) gets the id when the frame shows that image
-    // in that gallery. An image listed in this gallery through a legacy link (2.1.0 to 2.4.1, see
+    // in that gallery. An image listed in this gallery through a legacy link (pre-release builds, see
     // LegacyCleanup) is counted there, so no second entry appears before the cleanup.
     internal async Task RegisterImageAsync(int galleryId, int? fileId, string? name, CancellationToken ct)
     {

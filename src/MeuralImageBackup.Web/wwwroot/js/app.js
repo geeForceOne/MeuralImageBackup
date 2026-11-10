@@ -15,6 +15,13 @@ window.meural = {
         window.meuralApplyTheme(theme);
     },
 
+    // The browser's language and time zone, for "Automatic" in the region settings.
+    browserRegion: () => {
+        let timeZone = null;
+        try { timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { }
+        return { language: navigator.language || null, timeZone };
+    },
+
     // Focuses the element unless the focus is in it already or a dialog is open over it.
     keepFocus: (element) => {
         if (!element || element.contains(document.activeElement) || document.querySelector(".modal")) return;

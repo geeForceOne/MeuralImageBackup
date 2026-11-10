@@ -24,18 +24,19 @@ builder.Services.AddDataProtection()
     .SetApplicationName("MeuralImageBackup")
     .PersistKeysToFileSystem(new DirectoryInfo(paths.KeysPath));
 
-// The UI is in US English; numbers and dates follow the browser's region format, de-CH (the old
-// app's fixed format) when the browser doesn't say.
+// The UI is in US English; numbers and dates follow the region format chosen in Settings, else the
+// browser's, de-CH (the old app's fixed format) when the browser doesn't say.
 builder.Services.Configure<RequestLocalizationOptions>(o =>
 {
     o.SupportedCultures = CultureInfo.GetCultures(CultureTypes.SpecificCultures).ToList();
     o.SupportedUICultures = [CultureInfo.GetCultureInfo("en-US")];
-    o.DefaultRequestCulture = new RequestCulture("de-CH", "en-US");
+    o.DefaultRequestCulture = new RequestCulture(MeuralImageBackup.Core.Localization.Regions.DefaultRegion, "en-US");
     o.FallBackToParentCultures = true;
-    o.RequestCultureProviders = [new AcceptLanguageHeaderRequestCultureProvider()];
+    o.RequestCultureProviders = [new MeuralImageBackup.Web.Services.RegionCultureProvider(), new AcceptLanguageHeaderRequestCultureProvider()];
 });
 
 builder.Services.AddSingleton<PhotoSourceLibrary>();
+builder.Services.AddScoped<MeuralImageBackup.Web.Services.Prefs>();
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents(o => o.DetailedErrors = builder.Environment.IsDevelopment());

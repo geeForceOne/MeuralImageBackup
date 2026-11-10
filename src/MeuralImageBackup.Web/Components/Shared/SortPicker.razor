@@ -1,0 +1,26 @@
+@* The sort for the card views: a choice and a button that reverses its direction. Tables sort by
+   their column headers instead (SortHeader). *@
+<div class="filter-select sort-picker">
+    <label for="@_id">Sort</label>
+    <select id="@_id" class="select" value="@Current" @onchange="e => OnSort.InvokeAsync((e.Value?.ToString() ?? Filters.DefaultSort, (bool?)null))">
+        @foreach (var (key, label) in Choices)
+        {
+            <option value="@key">@label</option>
+        }
+    </select>
+    <button type="button" class="btn btn-ghost btn-icon sort-dir" title="@(Descending ? "Descending, click for ascending" : "Ascending, click for descending")"
+            aria-label="@(Descending ? "Sort ascending" : "Sort descending")" @onclick="() => OnSort.InvokeAsync((Current, !Descending))">
+        <span aria-hidden="true">@(Descending ? "▼" : "▲")</span>
+    </button>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IEnumerable<(string Key, string Label)> Choices { get; set; } = [];
+    [Parameter] public string Current { get; set; } = Filters.DefaultSort;
+    [Parameter] public bool Descending { get; set; }
+
+    // The sort chosen and its direction (null: the sort's natural one).
+    [Parameter] public EventCallback<(string Sort, bool? Descending)> OnSort { get; set; }
+
+    private readonly string _id = "sort-" + Guid.NewGuid().ToString("N")[..8];
+}
