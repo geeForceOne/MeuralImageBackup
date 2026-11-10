@@ -16,12 +16,13 @@ It's the successor of MeuralImageUploader 1.x and a drop-in replacement for it: 
 - **Galleries.** A card per gallery with its images, the frame it played on, how often and when it was last shown. Each gallery has its own page.
 - **Images.** All images as a grid or a table, with thumbnails, view counts and file sizes.
 - **Viewer.** Open an image large, step through with the arrow keys, open or download the original, or delete it.
-- **Find and filter.** Search by name, filter by frame and by "not shown for N days", and sort any way you like. Filters live in the URL, so Back brings them back.
+- **Find and filter.** Search by name, filter by frame and by "not shown for N days", and sort by name, times shown or when last shown, in tables by clicking a column header. Filters live in the URL, so Back brings them back, and each page remembers its view and sort.
 - **Sync with disk.** One button adds what's in the uploads folder but missing from the database: folders become galleries and files become images of the gallery whose folder they're in.
 - **Clean up.** Delete every gallery that hasn't been shown for a while in one go, and spot and remove entries whose file has gone missing.
 - **Duplicates.** Find images whose files are byte for byte the same, for example the same artwork uploaded twice, and keep one.
 - **Loose files.** See the files in the uploads folder that no image uses, and delete them.
 - **A photo source for MeuralManager.** MeuralManager can browse the backup by date or gallery and put images into playlists, next to Immich, with a token from the Settings page.
+- **Your region format.** Numbers, dates and times follow the region format and time zone chosen on the Settings page, or each browser's own.
 - **Dark, light or system theme**, remembered per browser.
 - **Works on phones and tablets**: sidebar on desktop, icon rail on tablets, tab bar on phones.
 - **What's new.** After an update a banner links to the release notes.
@@ -33,6 +34,10 @@ It's the successor of MeuralImageUploader 1.x and a drop-in replacement for it: 
 | Images as a table | Light theme |
 | --- | --- |
 | ![The Images table with one entry marked "File missing"](docs/screenshots/table.png) | ![The Galleries page in the light theme](docs/screenshots/light.png) |
+
+| Duplicates | Settings |
+| --- | --- |
+| ![The Duplicates page: the same image saved in two galleries, with Keep this one](docs/screenshots/duplicates.png) | ![The Settings page: MeuralManager access, region format and time zone](docs/screenshots/settings.png) |
 
 | On a phone | |
 | --- | --- |
@@ -57,6 +62,8 @@ services:
 ```
 
 Open http://localhost:8090. There's no login: put it on your home network, not on the internet.
+
+`latest` follows the newest release, currently 2.0.0. To stay on a version, use its tag instead, for example `ghcr.io/geeforceone/meuralimagebackup:2.0.0`.
 
 | Path / variable | What it is |
 | --- | --- |
