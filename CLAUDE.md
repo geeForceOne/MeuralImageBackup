@@ -1,100 +1,60 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+MeuralImageBackup is a Docker-hosted Blazor Server app (.NET 10, `.slnx`) that keeps a local copy of every image shown on Meural Canvas frames. Home Assistant posts each frame's current image to `POST /api/meural`. The app downloads it into a folder per frame and gallery and records it in SQLite. There is one user and no login, so anything other apps keep per user is kept per browser here. It replaced MeuralImageUploader 1.1.1 (.NET 7, Radzen) and must stay a drop-in replacement for it.
 
-## What this is
-
-MeuralImageBackup is a Docker-hosted web app that keeps a local copy of every image shown on Meural Canvas frames. Home Assistant posts the frame's current image to the API; the app downloads it into a folder per frame and gallery and records galleries and images (with access counts and last access) in SQLite. The web UI lets you browse, filter, preview and clean up what was collected.
-
-This repository is a **migration** of the old MeuralImageUploader (.NET 7, Radzen, at `D:\Programming\HA\MeuralImageUploader`, github.com/geeForceOne/MeuralImageUploader, last version 1.1.1). The old code is the reference for behavior. Its look and UI are not: the new UI is rebuilt to the standard of the sibling apps Trovami (`D:\Programming\Trovami`) and LaLira (`D:\Programming\LaLira`), whose code is the reference for patterns and style. Copy what's needed into this repository rather than depending on them.
-
-- **The Docker setup and the API stay compatible** (see Compatibility). An existing installation must keep working after swapping the image: same volumes, same database, same files, same Home Assistant calls.
-- **The UI and its functionality are modernized.** No Radzen. Hand-written UI in the style of Trovami and LaLira.
-- **Single user, no login**, as before. There are no accounts, so anything Trovami keeps per user (theme, dismissed What's new) is kept per browser here.
-
-### Functionality of the old app (to be modernized, not copied)
-- **Galleries.** A table of galleries per frame: frame, name, access count, last accessed, image count. Filters: frame, "not accessed for N days", gallery name. A click on the name previews the gallery's images. Deleting a gallery deletes its folder on disk and its database rows.
-- **Images.** A table of all images: frame, gallery, a thumbnail and name, whether the file exists on disk, access count, last accessed, with the same filters. "Delete images with no file" removes the rows whose file is missing.
-- **Release notes.** A hand-written page. It's replaced by the page built from `CHANGELOG.md` (see What's new).
-
-### Taken over from Trovami and LaLira
-- **What's new.** After an update the browser shows a banner ("MeuralImageBackup was updated to X.Y.Z") linking to the release notes page, built from `CHANGELOG.md`, until it's closed. It's remembered per browser, since there are no users. A browser isn't told about the version it first saw, and local "dev" builds show nothing. Any version other than the stored one counts, a lower one too: the pre-release builds were tagged 2.0.0 to 2.5.0 before everything was renumbered as 2.0.0 (tags, releases and images deleted, the user's decision), so a browser that saw 2.5.0 is still told about 2.0.0. Carry the old release notes (1.0.0 to 1.1.1) into `CHANGELOG.md`.
-- **Themes.** Dark (default), Light or System, rendered as `<html data-theme>`, remembered per browser.
-
-### Wording
-- **US English only**, American spelling, in the UI, docs and comments. No localization layer, but numbers and dates are still formatted with a region format (`Format`), never the server culture. Without users, the region format and time zone are chosen once for the installation on the Settings page, or come from the browser when set to Automatic (the old app was fixed to de-CH, which stays the fallback).
-
-## Compatibility (hard rule)
-
-Every change must keep these working, so existing installations and Home Assistant automations keep running unchanged. If a change would break one, stop and ask.
-
-- **Container.** Listens on port **80** inside the container (`EXPOSE 80`). .NET 8+ images default to 8080, so the Dockerfile sets `ASPNETCORE_HTTP_PORTS=80` (or `ASPNETCORE_URLS=http://+:80`). The working directory is `/app` and the app runs as root, as before, so existing volumes work without changing their owner.
-- **Volumes.** `/app/uploads` (the images) and `/app/database` (the SQLite file `meural.db`). Nothing else is persistent. Anything new that must survive a restart (Data Protection keys, settings) goes under `/app/database`, never into the image or a new volume.
-- **Environment.** `USE_FRAME_NAME_IN_PATH` (default `true`; anything that doesn't parse as a bool counts as `true`): `false` leaves out the frame folder level. (`SKIP_DUPLICATE_DOWNLOADS` existed in pre-release builds and is gone; a leftover variable is ignored. Every gallery gets its own copy.)
-- **On-disk layout.** `uploads/<frame>/<gallery>/<title>.jpeg`, or `uploads/<gallery>/<title>.jpeg` without the frame level. Names are cleaned of the characters invalid on Windows (`FileSystemHelpers`); a missing frame or gallery becomes `Unknown`; a missing title becomes the Meural file id, then `Unknown`. Existing files must be found by the new code with exactly these rules. (The old UI and `GetRandomFileAsync` built the fallback name from the database row id instead of the file id; that's a bug, not part of the contract.)
-- **`POST /api/meural`.** JSON body `{ "frameName", "title", "gallery", "url", "id" }` (all optional, case-insensitive, `id` an int). It registers the gallery and image (with the old "last gallery per frame" counting), downloads `url` to the path above unless the file exists there (so the same image shown in two galleries is saved in both folders, as the old app did; "stored once" from the pre-release builds is gone, the user's decision), deletes a zero-byte result, and **always answers 200** with an empty body, even when the download fails. No authentication.
-- **`GET /api/version`.** Returns the four-part assembly version as plain text (for example `1.1.1.0`).
-- **`/Images/uploads/...`.** Image URLs under `/Images/` keep resolving to the files in `/app/uploads`. The old app served all of `/app` there, including the database; that isn't part of the contract and must not be kept.
-- **Database.** The existing `meural.db` is upgraded in place. The tables (`Galleries`, `Images`, `LastGalleries`), their columns and the two existing migrations (`20230305214800__001_Initial`, `20230320163505_002_LastAccessFix`) are carried over with the same migration IDs, so `__EFMigrationsHistory` matches. New schema only through new migrations.
-- Route matching stays case-insensitive (`/api/Meural` works too).
+`src/MeuralImageBackup.Core` holds the domain, EF Core and file logic and never depends on the UI. It does no console or UI I/O: log through `ILogger`, and long-running methods take `IProgress<string>?` and a `CancellationToken`. `src/MeuralImageBackup.Web` holds the UI and the APIs.
 
 ## Commands
 
 ```
-dotnet build MeuralImageBackup.slnx                    # build everything
-dotnet run --project src/MeuralImageBackup.Web         # run the app locally (port 5188, data in ./data)
-dotnet test tests/MeuralImageBackup.Tests              # unit tests
-docker compose up --build                              # build and run the container (host port 8090)
+dotnet build MeuralImageBackup.slnx
+dotnet run --project src/MeuralImageBackup.Web         # port 5188, data in ./data
+dotnet test tests/MeuralImageBackup.Tests
+docker compose up --build                              # host port 8090
 dotnet ef migrations add <Name> --project src/MeuralImageBackup.Core --startup-project src/MeuralImageBackup.Web --output-dir Data/Migrations
+dotnet ef migrations has-pending-model-changes --project src/MeuralImageBackup.Core --startup-project src/MeuralImageBackup.Web   # after any model change
 ```
 
-## Workflow
+## Compatibility (hard rule: if a change would break one of these, stop and ask)
 
-When the user gives feedback or requests changes in a back-and-forth (bug reports, tweaks, "also do X"), don't implement each one immediately as it comes in. Acknowledge it, queue it, and keep gathering. Only start making changes once the user explicitly says "go" (or an equally unambiguous confirmation). Purely informational questions can still be answered right away.
+- **Container:** port 80 (`ASPNETCORE_HTTP_PORTS=80`), working directory `/app`, runs as root.
+- **Volumes:** `/app/uploads` and `/app/database` (`meural.db`). Nothing else is persistent. Anything new that must survive a restart goes under `/app/database`, such as the Data Protection keys in `database/keys`. Thumbnails are a temp-folder cache and never go in a volume.
+- **`USE_FRAME_NAME_IN_PATH`:** defaults to true, and any value that isn't a bool counts as true. `false` drops the frame folder level.
+- **On-disk layout:** `uploads/<frame>/<gallery>/<title>.jpeg`, or `uploads/<gallery>/<title>.jpeg` without the frame level. `FileSystemHelpers` removes characters Windows doesn't allow. A missing frame or gallery becomes `Unknown`. A missing title becomes the Meural file id, then `Unknown`, never the database row id.
+- **`POST /api/meural`:** takes JSON `{ frameName, title, gallery, url, id }`. All fields are optional and case-insensitive, and `id` is an int. It registers the gallery and image with the old "last gallery per frame" counting. It downloads the file unless it already exists at that path, deletes a zero-byte result, and **always answers 200 with an empty body**. No authentication.
+- **`GET /api/version`:** the four-part assembly version as plain text.
+- **`/Images/uploads/...`** serves `/app/uploads` only, never the rest of `/app` (that would expose the database).
+- **Old routes:** `/Gallery`, `/Image` and `/ReleaseNotes` keep working. All routes are case-insensitive.
+- **Database:** `meural.db` is upgraded in place. The tables `Galleries`, `Images` and `LastGalleries` and the migrations `20230305214800__001_Initial` and `20230320163505_002_LastAccessFix` keep their IDs. Schema changes go only in new migrations. Never edit or regenerate an existing migration.
+- **Photo source API** (`Api/PhotoSourceApi.cs`): answers the subset of Immich's API that MeuralManager's `ImmichApiClient` uses, in Immich's JSON shapes; keep the shapes in step with that client. It is read only and needs `X-API-Key`. Only a hash of the key is stored.
 
-## Git workflow
+## Decisions that aren't visible in the code
 
-Never run `git commit` or `git push` unless the user explicitly asks for it in that turn. A commit approval does not imply a push approval, and approval from an earlier turn does not carry forward to later changes. Every change starts on its own branch off an up-to-date main; after a merge, pull main, delete merged branches (`-d`) and `git fetch --prune`. Commit as `geeForceOne <1780268+geeForceOne@users.noreply.github.com>`, never with a real name or Gmail. Write commit messages that explain why.
+- An image belongs to exactly one gallery, the one whose folder holds its file. The same Meural file shown in another gallery is a separate row with its own file, and deleting one never touches the other.
+- Duplicates: keep one image and remove the others. No merging.
+- `GalleryImages` is legacy: nothing writes to it, but the table and its migration stay. The one-time Clean up deletes the extra copies but never a file that another row uses.
+- Sync with disk and the cleanups only run when the user starts them. Sync never removes anything.
+- What's new: any version other than the stored one counts, a lower one too. The pre-release builds were tagged 2.0.0 to 2.5.0 before everything was renumbered 2.0.0. Local dev builds show nothing.
+- Each page remembers its view and sort per browser. Search, frame and "not shown for" are not remembered.
+- US English. Numbers and dates go through the region format (`Format`), never the server culture. Times are stored in UTC.
 
-Nothing secret or personal is ever committed: databases, Data Protection keys, downloaded images, `.env`, local settings. Check staged files before every commit.
+## UI conventions and gotchas
 
-## Architecture
+- The style follows the sibling apps Trovami and LaLira. Copy code from them rather than referencing them. CSS is hand-written in `wwwroot/css/app.css` with no component library. Pages use the full window width. `--accent` is for actions and links; `--attention` is only for things that need attention, like missing files.
+- Use the shared `ConfirmDialog`, `PromptDialog` and `Toast`. Clicking outside a dialog never closes it.
+- Per-browser preferences go through `Prefs` (`meural.getPref`/`setPref`).
+- Enter dates and times with `DateField`/`TimeField`, never a bare `<input type="date|time">`.
+- Table cells are never `display: flex`; put a `<div class="row-actions">` inside the cell. Header alignment needs `.table th.num`.
+- Numbers written into SVG attributes use the invariant culture.
+- A callback passed as a plain `Func<>` needs `StateHasChanged`. Never name a parameter `Assets`, because it collides with .NET 10.
+- A dialog opened from the image viewer must return focus with `meural.keepFocus`.
+- Bool aria attributes are written as strings: `aria-pressed="@(x ? "true" : "false")"`.
+- `favicon.svg` mirrors the small `BrandMark` drawing. Nothing moves under `prefers-reduced-motion`.
+- Check external library APIs against current docs, not memory.
 
-Latest .NET (currently .NET 10, `net10.0`), Blazor Server, `.slnx` solution.
+## Git
 
-- **`src/MeuralImageBackup.Core`** (class library, no dependency on the web UI): domain models, EF Core persistence and migrations, gallery and image registration, the download, file naming and folder layout, cleanup. Long-running methods take an `IProgress<string>?` and a `CancellationToken`; no console or UI I/O in Core (log through `ILogger`, not `Console.WriteLine`).
-- **`src/MeuralImageBackup.Web`** (Blazor Server, interactive server render mode, prerendering off): UI, hosting, and the compatible API as minimal APIs (`Api/CompatibleApi.cs`: `/api/meural`, `/api/version`), plus `/thumbs/{id}` for the grids.
-- **Photo source API** (`Api/PhotoSourceApi.cs`): MeuralManager (`D:\Programming\MeuralUi`) browses the backup through it as a source next to Immich, with a second instance of its `ImmichApiClient`. So it answers the subset of Immich's REST API that client uses, in Immich's JSON shapes (`users/me`, `search/metadata`, `search/smart`, `albums`, `assets/{id}/thumbnail`, `assets/{id}/original`); keep the shapes in step with that client. No people. An asset is an image with a file (id = image id, date = first saved; the same Meural file in two galleries is two assets); an album is a gallery. Read only. Every call needs the token from the Settings page in `X-API-Key` (`ApiTokenService`: only a SHA-256 hash is stored, in the `Settings` table, migration `004_Settings`); no token, no access. Status code pages are skipped there (`SkipStatusCodePages`), so errors are JSON.
-- **The UI reads everything at once.** `LibraryService.LoadAsync` loads all galleries and images and walks the uploads folder once to see which files exist; pages filter and sort in memory (`Filters`). Filters live in the URL query, so Back restores them.
-- **Sorting.** Tables sort by their column headers (`SortHeader`: a click sorts by the column in its natural direction, names A to Z and numbers and dates largest first; a second click reverses it, `dir` in the URL). The Sort dropdown with a direction button (`SortPicker`) only shows in the card views, and in table view on phones, where the headers are hidden. The view and the sort are remembered per browser for each page (`Prefs`); search, frame and "not shown for" are not (the user's decision). A URL with its own `sort`/`dir` wins.
-- **An image belongs to one gallery** (the user's decision): the one whose folder its file is in, `Images.GalleryId`. The same Meural file shown in another gallery is another `Images` row there (one row per FileId and gallery), with its own file and access count; deleting one never touches the other. An `ImageView` is one row (`Key` = `Id`).
-- **Legacy links.** In pre-release builds an image could be listed in several galleries through `GalleryImages` (migration `003_GalleryImages`), with "shared copies". Nothing writes that table any more and the UI ignores it, but the table and its migration stay (a later migration can drop it). When it has rows, the Galleries page shows a one-time **Clean up** (`Library.Legacy`, `LibraryService.CleanUpLegacyAsync`, confirm, progress and Cancel, never automatic): each such image stays in its own gallery when that folder has its file, else moves to the first linked gallery that has it; the copies in the other linked galleries' folders are deleted (the user's decision: "kill" the extras) and the links go. A file another row uses is never deleted. Until then, registration counts a linked image in its linked gallery and the sync treats linked copies as known.
-- **Duplicates page** (`/duplicates`, `IdenticalFilesService`): different images whose files are byte for byte the same, including the same Meural file shown in two galleries (SHA-256, only files sharing a size are read, fingerprints cached in memory by path, size and time); `LibraryService.RemoveIdenticalAsync` keeps one image and removes the others (their files and entries; the kept image is unchanged, no merging, the user's decision). The old "Same image" tab is gone; `?kind=files` URLs still land there.
-- **Sync with disk** (`LibraryService.SyncWithDiskAsync`, a button on the Galleries page, never automatic, with progress and Cancel): adds galleries for unrecorded folders and an entry for every image file that no row of its folder's gallery uses. The entry takes the Meural id of the images elsewhere with that file name when they all share one, else the id from a numeric name, else 0 (registration fills it in later). It never removes anything. Its matching runs in one place (`SyncAsync`), also as a dry run for `FindLooseFilesAsync`: image files outside a gallery folder, and non-images. The Loose files page (`/files`) lists and deletes those; `DeleteLooseFilesAsync` re-checks the list, so it never deletes a file an image uses.
-- **Pages:** Galleries (`/`, cards, stats, filters, delete what hasn't been shown for N days), a gallery (`/g/{id}`), Images (`/images`, grid or table, "only missing files", remove entries without a file), Duplicates (`/duplicates`), Loose files (`/files`), Settings (`/settings`: the API token, region format and time zone, the container's settings), Release notes. The old routes `/Gallery`, `/Image` and `/ReleaseNotes` still work. `ImageViewer` shows one image large (arrow keys, Escape, open, download, delete).
-- **`tests/MeuralImageBackup.Tests`**: file naming and folder layout against the old rules, gallery and image registration, the library's deletes, one image per gallery, the legacy cleanup and the sync, an EF Core 7 `meural.db` taken over as it is, and the HTTP contract through `WebApplicationFactory`.
-
-### Hosting and data
-- **SQLite** through EF Core, at `/app/database/meural.db` in the container. Paths come from `Storage__UploadsPath`, `Storage__DatabaseDirectory` and `Storage__ThumbnailsPath`, with defaults that match the old relative paths (`uploads/`, `database/` under the working directory); see Compatibility. Local development points them at `./data` (appsettings.Development.json). The Data Protection keys go to `database/keys`.
-- **Thumbnails** (SkiaSharp, longest side 480 px) are only a cache, in the temp folder by default, keyed by the original's path, size and time; never put them in a volume.
-- **Region format and time zone** are set on the Settings page for the whole installation (`RegionSettings`, keys `RegionFormat` and `TimeZone` in the `Settings` table, no migration; the list from Trovami's `Regions`). Automatic (no row) takes them from the browser: the culture from `Accept-Language` (de-CH when it doesn't say, `RegionCultureProvider` comes first), the time zone from the `mib-tz` cookie App.razor's script sets (cascaded as `AppUi.Zone`). The circuit keeps the culture it started with, so saving reloads the page. Times are stored in UTC.
-- A new repository, github.com/geeForceOne/MeuralImageBackup; the old MeuralImageUploader repository stays as it is.
-- A `vX.Y.Z` tag runs GitHub Actions: `docker-publish.yml` sends the image to `ghcr.io/geeforceone/meuralimagebackup` only (no Docker Hub), as X.Y.Z / X.Y / latest. Existing MeuralImageUploader installs switch by changing the image name; everything else stays compatible. The workflow also creates the GitHub release from that version's `CHANGELOG.md` section. The version is passed as a build argument and shows in the app and in `/api/version`.
-
-## Conventions
-
-- **Verify external APIs, don't work from memory.** Check current official docs before coding against a library or service. Package versions and SDK shapes change.
-- **Shared dialogs.** Reusable, awaitable `ConfirmDialog`, `PromptDialog` and `Toast` components in `Components/Shared/`. Clicking outside a dialog never closes it; Cancel (or Escape where offered) does.
-- **Hand-written CSS design system** in `wwwroot/css/app.css`, no component library: "a gallery after hours": charcoal walls, one gilt accent (`--accent`) for actions and links, the logo's coral (`--attention`) only for what needs attention (missing files). IBM Plex Sans and Mono, self-hosted. Dark-first with a light theme (Dark, Light, System in the sidebar, per browser). Responsive: sidebar on desktop, icon rail on tablets, top bar and tab bar on phones. Every page uses the full window width, with no maximum; only small controls size to their content.
-- **Per-browser preferences** (theme, the seen version for What's new, each page's view and sort) go through `meural.getPref` / `meural.setPref` (localStorage, `mib.` prefix), from C# through `Prefs`, wrapped so blocked storage falls back to the default.
-- **Gotcha:** `.table th` comes after the `th.num` rule in app.css with the same specificity, so a header's alignment needs `.table th.num` (that's why number headers sat left of their numbers).
-- **Logo** (`BrandMark`): a framed picture (hills and a coral sun) hanging in front of its copy, the backup. Animated like Trovami's and LaLira's (`brand-motion.js`: copy, shine, swing, develop): the header logo plays a motion on hover, the busy indicator (loading, reconnecting) loops. Below 40 px a simpler drawing with thicker lines; `favicon.svg` is that one with fixed colors, keep the two in step. Nothing moves under `prefers-reduced-motion`.
-- **Dates and times are entered in the region format**: use `DateField` / `TimeField`, never a bare `<input type="date">` or `type="time"`.
-- **Table cells are never `display: flex`** (it breaks the row lines); put a `<div class="row-actions">` inside the cell.
-- **Migrations are never regenerated or edited once they exist**, not even before the first release: existing databases record them by ID. A schema change is always a new migration.
-- **Gotcha:** numbers written into SVG attributes must use the invariant culture.
-- **Gotcha:** a component callback passed as a plain `Func<...>` (not EventCallback) doesn't re-render the parent; call StateHasChanged after it changes state.
-- **Gotcha:** don't name a component parameter `Assets`; it collides with `ComponentBase.Assets` in .NET 10.
-- **Gotcha:** a dialog opened from the image viewer takes the keyboard focus; `meural.keepFocus` gives it back when the dialog closes, or the arrow keys and Escape stop working.
-- **Gotcha:** EF Core 9 and later refuse to migrate when the model differs from the last migration's snapshot. After a model change, check with `dotnet ef migrations has-pending-model-changes` (same project arguments as above).
-- **Gotcha:** Blazor renders a bool attribute value `true` as an empty attribute and drops it for `false`; write `aria-pressed="@(x ? "true" : "false")"` (same for aria-expanded and aria-checked).
+- Start every change on a branch off an up-to-date main. After a merge: pull main, `git branch -d` the merged branch, `git fetch --prune`.
+- Commits and tags are made as `geeForceOne <1780268+geeForceOne@users.noreply.github.com>`. The repo's local git config sets this.
+- Never commit databases, keys, downloaded images, `.env` or local settings. Check the staged files before every commit.
+- Pushing a `vX.Y.Z` tag publishes the image to ghcr.io and creates the GitHub release from `CHANGELOG.md`. That is public.
