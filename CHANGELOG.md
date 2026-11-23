@@ -1,5 +1,11 @@
 # Release notes
 
+## 2.1.0 - 2026-11-23
+
+### New
+
+- **Duplicates**: Keep all keeps every version of a group and stops listing it, until another copy of the same file turns up.
+
 ## 2.0.0 - 2026-11-10
 
 MeuralImageUploader is now MeuralImageBackup: rebuilt on .NET 10 with a new interface. It's a drop-in replacement: the same port, volumes, database, folders and API, so Home Assistant and an existing installation keep working. The image moved to `ghcr.io/geeforceone/meuralimagebackup`.
