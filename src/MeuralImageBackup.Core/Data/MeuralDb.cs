@@ -13,6 +13,7 @@ public class MeuralDb(DbContextOptions<MeuralDb> options) : DbContext(options)
     public DbSet<Image> Images => Set<Image>();
     public DbSet<GalleryImage> GalleryImages => Set<GalleryImage>();
     public DbSet<Setting> Settings => Set<Setting>();
+    public DbSet<KeptDuplicate> KeptDuplicates => Set<KeptDuplicate>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -40,5 +41,11 @@ public class MeuralDb(DbContextOptions<MeuralDb> options) : DbContext(options)
             b.HasIndex(g => g.FrameName).HasDatabaseName("IX_LastGallery_FrameName"));
 
         modelBuilder.Entity<Setting>(b => b.HasKey(s => s.Key));
+
+        modelBuilder.Entity<KeptDuplicate>(b =>
+        {
+            b.HasKey(k => k.ImageId);
+            b.HasOne<Image>().WithMany().HasForeignKey(k => k.ImageId).OnDelete(DeleteBehavior.Cascade);
+        });
     }
 }

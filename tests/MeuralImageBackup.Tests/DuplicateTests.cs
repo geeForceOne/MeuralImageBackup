@@ -330,6 +330,83 @@ public class DuplicateTests
     }
 
     [Fact]
+    public async Task KeepingAllMarksTheGroupKeptAndKeepOneOfEachLeavesIt()
+    {
+        using var storage = new TestStorage();
+        var db = await storage.MigratedDbAsync();
+        var uploads = Uploads(storage, db, new FakeImageServer());
+        await uploads.HandleAsync(Shown("A", 1));
+        await uploads.HandleAsync(Shown("B", 1));
+        var library = Library(storage, db);
+        var group = Assert.Single(await Identical(storage).FindAsync(await library.LoadAsync()));
+        Assert.False(group.Kept);
+
+        await library.KeepAllAsync(group);
+
+        var loaded = await library.LoadAsync();
+        var kept = Assert.Single(await Identical(storage).FindAsync(loaded));
+        Assert.True(kept.Kept);
+        Assert.Equal(new DedupeResult(0, 0, 0), await library.RemoveIdenticalAsync([kept]));
+        Assert.Equal(2, (await library.LoadAsync()).Images.Count);
+        Assert.True(File.Exists(storage.Upload("Living room/A/Image 1.jpeg")));
+        Assert.True(File.Exists(storage.Upload("Living room/B/Image 1.jpeg")));
+    }
+
+    [Fact]
+    public async Task AKeptGroupIsListedAgainWhenAnotherCopyJoins()
+    {
+        using var storage = new TestStorage();
+        var db = await storage.MigratedDbAsync();
+        var uploads = Uploads(storage, db, new FakeImageServer());
+        await uploads.HandleAsync(Shown("A", 1));
+        await uploads.HandleAsync(Shown("B", 1));
+        var library = Library(storage, db);
+        await library.KeepAllAsync(Assert.Single(await Identical(storage).FindAsync(await library.LoadAsync())));
+
+        await uploads.HandleAsync(Shown("C", 1));
+
+        var group = Assert.Single(await Identical(storage).FindAsync(await library.LoadAsync()));
+        Assert.Equal(3, group.Images.Count);
+        Assert.False(group.Kept);
+    }
+
+    [Fact]
+    public async Task AKeptGroupCanBeListedAgain()
+    {
+        using var storage = new TestStorage();
+        var db = await storage.MigratedDbAsync();
+        var uploads = Uploads(storage, db, new FakeImageServer());
+        await uploads.HandleAsync(Shown("A", 1));
+        await uploads.HandleAsync(Shown("B", 1));
+        var library = Library(storage, db);
+        await library.KeepAllAsync(Assert.Single(await Identical(storage).FindAsync(await library.LoadAsync())));
+        var kept = Assert.Single(await Identical(storage).FindAsync(await library.LoadAsync()));
+
+        await library.ListAsDuplicatesAgainAsync(kept);
+
+        Assert.False(Assert.Single(await Identical(storage).FindAsync(await library.LoadAsync())).Kept);
+    }
+
+    [Fact]
+    public async Task AKeptGroupStaysKeptWhenOneOfItsImagesIsDeleted()
+    {
+        using var storage = new TestStorage();
+        var db = await storage.MigratedDbAsync();
+        var uploads = Uploads(storage, db, new FakeImageServer());
+        await uploads.HandleAsync(Shown("A", 1));
+        await uploads.HandleAsync(Shown("B", 1));
+        await uploads.HandleAsync(Shown("C", 1));
+        var library = Library(storage, db);
+        await library.KeepAllAsync(Assert.Single(await Identical(storage).FindAsync(await library.LoadAsync())));
+
+        await library.DeleteImageAsync((await library.LoadAsync()).Images.Single(i => i.GalleryName == "C").Id);
+
+        Assert.True(Assert.Single(await Identical(storage).FindAsync(await library.LoadAsync())).Kept);
+        await using var ctx = db.CreateDbContext();
+        Assert.Equal(2, await ctx.KeptDuplicates.CountAsync());
+    }
+
+    [Fact]
     public async Task SyncReportsProgress()
     {
         using var storage = new TestStorage();

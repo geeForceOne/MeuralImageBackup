@@ -101,6 +101,20 @@ namespace MeuralImageBackup.Core.Data.Migrations
                     b.ToTable("Images");
                 });
 
+            modelBuilder.Entity("MeuralImageBackup.Core.Models.KeptDuplicate", b =>
+                {
+                    b.Property<int>("ImageId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Hash")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("ImageId");
+
+                    b.ToTable("KeptDuplicates");
+                });
+
             modelBuilder.Entity("MeuralImageBackup.Core.Models.LastGallery", b =>
                 {
                     b.Property<int>("Id")
@@ -160,6 +174,15 @@ namespace MeuralImageBackup.Core.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Gallery");
+                });
+
+            modelBuilder.Entity("MeuralImageBackup.Core.Models.KeptDuplicate", b =>
+                {
+                    b.HasOne("MeuralImageBackup.Core.Models.Image", null)
+                        .WithMany()
+                        .HasForeignKey("ImageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("MeuralImageBackup.Core.Models.Gallery", b =>

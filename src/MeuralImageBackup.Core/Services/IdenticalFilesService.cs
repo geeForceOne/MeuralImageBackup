@@ -12,7 +12,9 @@ public sealed record IdenticalImage(int Id, string Name, int FileId, int AccessC
 // first image is the one "keep one of each" keeps: the most shown, then the oldest.
 // Two images with the same title in the same gallery share one file (files are named after the
 // title, so the second was never downloaded): removing one removes only its entry.
-public sealed record IdenticalFiles(string Hash, long Size, IReadOnlyList<IdenticalImage> Images)
+// Kept: the user chose "Keep all" for exactly these images (or more of them, since removed) and
+// this file, so the group isn't a duplicate to deal with any more.
+public sealed record IdenticalFiles(string Hash, long Size, IReadOnlyList<IdenticalImage> Images, bool Kept = false)
 {
     public IdenticalImage Keeper => Images[0];
 
@@ -79,10 +81,15 @@ public sealed class IdenticalFilesService(ImagePaths paths)
                 .ThenBy(i => i.Id)
                 .ToList()))
             .Where(g => g.Images.Count > 1)
-            .OrderByDescending(g => g.Wasted)
+            .Select(g => g with { Kept = IsKept(g, library.Kept) })
+            .OrderBy(g => g.Kept)
+            .ThenByDescending(g => g.Wasted)
             .ThenBy(g => g.Keeper.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
     }
+
+    private static bool IsKept(IdenticalFiles group, IReadOnlyDictionary<int, string>? kept) =>
+        kept is { Count: > 0 } && group.Images.All(i => kept.TryGetValue(i.Id, out var hash) && hash == group.Hash);
 
     private async Task<string?> HashAsync(string relative, long size, long version, CancellationToken ct)
     {
