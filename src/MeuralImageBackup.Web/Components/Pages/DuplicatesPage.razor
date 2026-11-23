@@ -10,10 +10,10 @@
         @if (_library is not null)
         {
             <p class="page-sub">
-                @if (_identical is { Count: > 0 })
+                @if (_open.Count > 0)
                 {
-                    <span>@($"{Format.Count(_identical.Count, "file is", "files are")} saved under more than one image")</span>
-                    <span>@($"{Format.Size(_identical.Sum(g => g.Wasted))} in extra copies")</span>
+                    <span>@($"{Format.Count(_open.Count, "file is", "files are")} saved under more than one image")</span>
+                    <span>@($"{Format.Size(_open.Sum(g => g.Wasted))} in extra copies")</span>
                 }
             </p>
         }
@@ -30,12 +30,12 @@
             </button>
         </div>
     }
-    else if (_finding is null && _identical is { Count: > 0 } all && _identicalShown.Count > 0)
+    else if (_finding is null && _open.Count > 0 && OpenShown.Count > 0)
     {
         <div class="page-actions">
             <button type="button" class="btn btn-primary" disabled="@Busy" @onclick="KeepOneOfEachIdenticalAsync"
-                    title="Each group keeps its most shown image">
-                <Icon Name="broom" Size="16" />@(_identicalShown.Count == all.Count ? "Keep one of each" : $"Keep one of these {Format.Number(_identicalShown.Count)}")
+                    title="Each group keeps its most shown image. Groups kept whole are left alone.">
+                <Icon Name="broom" Size="16" />@(OpenShown.Count == _open.Count ? "Keep one of each" : $"Keep one of these {Format.Number(OpenShown.Count)}")
             </button>
         </div>
     }
@@ -61,9 +61,14 @@ else
 
     [SupplyParameterFromQuery] public string? Q { get; set; }
     [SupplyParameterFromQuery] public string? Frame { get; set; }
+    [SupplyParameterFromQuery(Name = "kept")] public bool ShowKept { get; set; }
     private Library? _library;
     private IReadOnlyList<IdenticalFiles>? _identical;
     private List<IdenticalFiles> _identicalShown = [];
+    // The groups not kept whole ("Keep all"), and how many were.
+    private List<IdenticalFiles> _open = [];
+    private int _keptCount;
+    private List<IdenticalFiles> OpenShown => _identicalShown.Where(g => !g.Kept).ToList();
     private CancellationTokenSource? _finding;
     private string _findStatus = "";
     private int _limit = Page;
@@ -92,19 +97,25 @@ else
     private void Apply()
     {
         if (_library is null) return;
-        _identicalShown = (_identical ?? []).Where(g => g.Images.Any(i => Matches(i.Name, i.Copies))).ToList();
+        _open = (_identical ?? []).Where(g => !g.Kept).ToList();
+        _keptCount = (_identical?.Count ?? 0) - _open.Count;
+        _identicalShown = Listed.Where(g => g.Images.Any(i => Matches(i.Name, i.Copies))).ToList();
     }
+
+    // The groups the list shows before search and frame: the kept ones only with the switch on.
+    private IEnumerable<IdenticalFiles> Listed => (_identical ?? []).Where(g => ShowKept || !g.Kept);
 
     private bool Matches(string name, IEnumerable<ImageView> views) =>
         Filters.Matches(Q, [name, .. views.Select(v => v.GalleryName)]) &&
         (Frame is null || views.Any(v => v.FrameName == Frame));
 
-    private void Set(string? q = null, string? frame = null)
+    private void Set(string? q = null, string? frame = null, bool? kept = null)
     {
         ReplaceQuery(new Dictionary<string, object?>
         {
             ["q"] = q is null ? Q : q.Length == 0 ? null : q,
             ["frame"] = frame is null ? Frame : frame.Length == 0 ? null : frame,
+            ["kept"] = (kept ?? ShowKept) ? true : null,
         });
     }
 
@@ -135,6 +146,13 @@ else
                             <option value="@f">@f</option>
                         }
                     </select>
+                </label>
+            }
+            @if (_keptCount > 0)
+            {
+                <label class="check filter-check">
+                    <input type="checkbox" checked="@ShowKept" @onchange="e => Set(kept: e.Value is true)" />
+                    <span>@($"Show kept ({Format.Number(_keptCount)})")</span>
                 </label>
             }
         </div>
@@ -183,6 +201,15 @@ else
                 <button type="button" class="btn btn-secondary" @onclick="FindIdenticalAsync"><Icon Name="sync" Size="16" />Compare files</button>
             </div>
         }
+        else if (_open.Count == 0 && !ShowKept && _keptCount > 0)
+        {
+            <div class="empty">
+                <BrandMark Size="64" PlayOnLoad="true" />
+                <h2>No duplicates left</h2>
+                <p>@($"You kept all versions of {Format.Count(_keptCount, "group", "groups")}, so they aren't listed.")</p>
+                <button type="button" class="btn btn-secondary" @onclick="() => Set(kept: true)">@($"Show kept ({Format.Number(_keptCount)})")</button>
+            </div>
+        }
         else if (_identical.Count == 0)
         {
             <div class="empty">
@@ -198,14 +225,15 @@ else
                 <Icon Name="info" />
                 <span>
                     Keeping one image removes the others: their files and their entries in their galleries. The kept image stays as it is.
-                    If a frame shows a removed image again, it's saved again.
+                    If a frame shows a removed image again, it's saved again. Keep all leaves every image as it is and stops listing the group,
+                    until another image with the same file turns up.
                 </span>
             </div>
 
             @FilterBar()
 
             <p class="result-count muted small">
-                @(_identicalShown.Count == _identical.Count ? Format.Count(_identicalShown.Count, "group", "groups") : $"{Format.Number(_identicalShown.Count)} of {Format.Count(_identical.Count, "group", "groups")}")
+                @(_identicalShown.Count == Listed.Count() ? Format.Count(_identicalShown.Count, "group", "groups") : $"{Format.Number(_identicalShown.Count)} of {Format.Count(Listed.Count(), "group", "groups")}")
                 <button type="button" class="link-button" disabled="@Busy" @onclick="RecompareAsync">Compare again</button>
             </p>
 
@@ -219,13 +247,19 @@ else
                     @foreach (var g in _identicalShown.Take(_limit))
                     {
                         var group = g;
-                        <article @key="g.Hash" class="dupe">
+                        <article @key="g.Hash" class="dupe@(g.Kept ? " dupe-kept" : "")">
                             <button type="button" class="dupe-photo" title="View large" @onclick="() => Open(group.Images.SelectMany(i => i.Copies))">
                                 <img src="@ImageTile.ThumbUrl(g.Keeper.Copies[0])" alt="" loading="lazy" decoding="async" />
                             </button>
                             <div class="dupe-body">
                                 <div class="dupe-head">
-                                    <h2 class="dupe-name">@(g.SharedFile ? $"{Format.Count(g.Images.Count, "image shares", "images share")} one file" : $"{Format.Count(g.Images.Count, "image", "images")} with the same file")</h2>
+                                    <h2 class="dupe-name">
+                                        @(g.SharedFile ? $"{Format.Count(g.Images.Count, "image shares", "images share")} one file" : $"{Format.Count(g.Images.Count, "image", "images")} with the same file")
+                                        @if (g.Kept)
+                                        {
+                                            <span class="tag" title="You chose to keep all versions, so this group is only listed when Show kept is on">Kept all</span>
+                                        }
+                                    </h2>
                                     <span class="dupe-meta">
                                         @if (g.SharedFile)
                                         {
@@ -271,6 +305,21 @@ else
                                         </li>
                                     }
                                 </ul>
+                                <div class="dupe-actions">
+                                    @if (g.Kept)
+                                    {
+                                        <button type="button" class="btn btn-ghost btn-sm" disabled="@Busy" @onclick="() => ListAgainAsync(group)">
+                                            <Icon Name="sync" Size="15" />List as duplicates again
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="btn btn-ghost btn-sm" disabled="@Busy" @onclick="() => KeepAllAsync(group)"
+                                                title="Keeps every image and stops listing this group">
+                                            <Icon Name="check" Size="15" />Keep all
+                                        </button>
+                                    }
+                                </div>
                             </div>
                         </article>
                     }
@@ -309,9 +358,38 @@ else
         await ReloadAsync();
     }
 
+    // Keep all: nothing is removed, so no confirmation. The group leaves the list (or gets its tag
+    // when kept groups are shown) right away.
+    private async Task KeepAllAsync(IdenticalFiles group)
+    {
+        if (await RunAsync(() => LibraryService.KeepAllAsync(group, PageToken)))
+        {
+            Ui.Toast.Success($"Kept all {Format.Count(group.Images.Count, "image", "images")} of {group.Keeper.Name}. They're no longer listed as duplicates.");
+            SetKept(group, true);
+        }
+        await ReloadAsync();
+    }
+
+    private async Task ListAgainAsync(IdenticalFiles group)
+    {
+        if (await RunAsync(() => LibraryService.ListAsDuplicatesAgainAsync(group, PageToken)))
+        {
+            Ui.Toast.Success($"{group.Keeper.Name} is listed as a duplicate again.");
+            SetKept(group, false);
+        }
+        await ReloadAsync();
+    }
+
+    private void SetKept(IdenticalFiles group, bool kept)
+    {
+        _identical = _identical?.Select(g => g.Hash == group.Hash ? g with { Kept = kept } : g).ToList();
+        Apply();
+        StateHasChanged();
+    }
+
     private async Task KeepOneOfEachIdenticalAsync()
     {
-        var groups = _identicalShown.ToList();
+        var groups = OpenShown;
         var images = groups.Sum(g => g.Images.Count - 1);
         var ok = await Ui.Confirm.AskAsync(
             $"Remove {Format.Count(images, "image", "images")}?",

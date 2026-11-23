@@ -839,6 +839,9 @@ th.num .sort-button { flex-direction: row-reverse; }
 .dupe-sub { display: flex; flex-wrap: wrap; gap: 0 10px; color: var(--pencil); font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
 .dupe-sub span { display: inline-flex; align-items: center; gap: 4px; }
 
+.dupe-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.dupe-kept .dupe-photo { opacity: 0.7; }
+
 .dupe-tab-help { margin: 0 0 16px; }
 .dupe-finding .busy-detail { white-space: normal; }
 .result-count .link-button { margin-left: 10px; }

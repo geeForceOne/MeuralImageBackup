@@ -30,8 +30,10 @@ public sealed record GalleryView(
 // Everything recorded, read at once: the collection is small enough (thousands of images) to
 // filter and sort in memory, and one walk over the uploads folder answers which files exist.
 // Legacy is what the one-time cleanup of images listed in several galleries would do (null when
-// there's nothing to clean up).
-public sealed record Library(IReadOnlyList<GalleryView> Galleries, IReadOnlyList<ImageView> Images, long DiskSize, LegacyCleanup? Legacy = null)
+// there's nothing to clean up). Kept is the file fingerprint of each image whose group of identical
+// files the user kept whole (see KeptDuplicate).
+public sealed record Library(IReadOnlyList<GalleryView> Galleries, IReadOnlyList<ImageView> Images, long DiskSize, LegacyCleanup? Legacy = null,
+    IReadOnlyDictionary<int, string>? Kept = null)
 {
     public IReadOnlyList<string> Frames { get; } = Galleries.Select(g => g.FrameName).Distinct().Order(StringComparer.CurrentCultureIgnoreCase).ToList();
 }
@@ -74,6 +76,7 @@ public sealed class LibraryService(IDbContextFactory<MeuralDb> dbFactory, ImageP
         var galleries = await db.Galleries.AsNoTracking().ToListAsync(ct);
         var images = await db.Images.AsNoTracking().ToListAsync(ct);
         var links = await db.GalleryImages.AsNoTracking().ToListAsync(ct);
+        var kept = await db.KeptDuplicates.AsNoTracking().ToDictionaryAsync(k => k.ImageId, k => k.Hash, ct);
         var files = await Task.Run(() => ScanFiles(ct), ct);
 
         var byId = galleries.ToDictionary(g => g.Id);
@@ -104,7 +107,28 @@ public sealed class LibraryService(IDbContextFactory<MeuralDb> dbFactory, ImageP
                 legacy = new LegacyCleanup(plan.Count, plan.Sum(p => p.Delete.Count), plan.Sum(p => p.Delete.Sum(d => d.Size)));
         }
 
-        return new Library(galleryViews, views, files.Values.Sum(f => f.Size), legacy);
+        return new Library(galleryViews, views, files.Values.Sum(f => f.Size), legacy, kept);
+    }
+
+    // "Keep all": the group's images stay as they are and the group leaves the Duplicates list until
+    // another image with the same file joins it. Replaces what was recorded for these images.
+    public async Task KeepAllAsync(IdenticalFiles group, CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var ids = group.Images.Select(i => i.Id).ToList();
+        var existing = await db.Images.Where(i => ids.Contains(i.Id)).Select(i => i.Id).ToListAsync(ct);
+        await db.KeptDuplicates.Where(k => ids.Contains(k.ImageId)).ExecuteDeleteAsync(ct);
+        db.KeptDuplicates.AddRange(existing.Select(id => new KeptDuplicate { ImageId = id, Hash = group.Hash }));
+        await db.SaveChangesAsync(ct);
+        logger.LogInformation("Kept all {Count} images with the same file as {Image}", existing.Count, group.Keeper.Name);
+    }
+
+    // Undoes "Keep all": the group is listed as duplicates again.
+    public async Task ListAsDuplicatesAgainAsync(IdenticalFiles group, CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var ids = group.Images.Select(i => i.Id).ToList();
+        await db.KeptDuplicates.Where(k => ids.Contains(k.ImageId)).ExecuteDeleteAsync(ct);
     }
 
     // Deletes the gallery's images and their files. Its folder goes as a whole (as before), unless
@@ -211,8 +235,10 @@ public sealed class LibraryService(IDbContextFactory<MeuralDb> dbFactory, ImageP
     }
 
     // Keeps the first image (the most shown) of every group of identical files and removes the others.
+    // Groups the user kept whole are skipped.
     public async Task<DedupeResult> RemoveIdenticalAsync(IReadOnlyList<IdenticalFiles> groups, IProgress<string>? progress = null, CancellationToken ct = default)
     {
+        groups = groups.Where(g => !g.Kept).ToList();
         int images = 0, files = 0;
         var bytes = 0L;
         for (var n = 0; n < groups.Count; n++)
@@ -247,6 +273,7 @@ public sealed class LibraryService(IDbContextFactory<MeuralDb> dbFactory, ImageP
         var galleries = await db.Galleries.AsNoTracking().ToListAsync(ct);
         var images = await db.Images.AsNoTracking().ToListAsync(ct);
         var links = await db.GalleryImages.AsNoTracking().ToListAsync(ct);
+        var kept = await db.KeptDuplicates.AsNoTracking().ToDictionaryAsync(k => k.ImageId, k => k.Hash, ct);
         var plan = await Task.Run(() => PlanLegacy(galleries, images, links,
             r => paths.FullPath(r) is { } full && File.Exists(full) ? new FileInfo(full).Length : null), ct);
 
@@ -407,6 +434,7 @@ public sealed class LibraryService(IDbContextFactory<MeuralDb> dbFactory, ImageP
         var galleries = await db.Galleries.AsNoTracking().ToListAsync(ct);
         var images = await db.Images.AsNoTracking().ToListAsync(ct);
         var links = await db.GalleryImages.AsNoTracking().ToListAsync(ct);
+        var kept = await db.KeptDuplicates.AsNoTracking().ToDictionaryAsync(k => k.ImageId, k => k.Hash, ct);
 
         // The file names each gallery's images use, the legacy links' included.
         var imageById = images.ToDictionary(i => i.Id);
